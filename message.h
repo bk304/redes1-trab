@@ -39,7 +39,7 @@ typedef struct t_message_data {
 #define C_END_OF_FILE   0b1001
 #define C_END_OF_GROUP  0b1010
 #define C_UNUSED_2      0b1011
-#define C_ERROR         0b110
+#define C_ERROR         0b1100
 #define C_OK            0b1101
 #define C_ACK           0b1110
 #define C_NACK          0b1111
@@ -54,6 +54,6 @@ typedef struct t_message_data {
 
 
 void set_start_delimiter(t_message *message);
-void set_message(int length, int seq, int type, t_message_data *data);
+void set_message(t_message *message, int length, int seq, int type, t_message_data *data);
 
 #endif // __MESSAGE_H__
