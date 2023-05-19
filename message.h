@@ -54,6 +54,6 @@ typedef struct t_message_data {
 
 
 void set_start_delimiter(t_message *message);
-void set_message(int length, int seq, int type, t_message_data *data);
+void set_message(t_message *message, int length, int seq, int type, t_message_data *data);
 
 #endif // __MESSAGE_H__
