@@ -39,7 +39,7 @@ typedef struct t_message_data {
 #define C_END_OF_FILE   0b1001
 #define C_END_OF_GROUP  0b1010
 #define C_UNUSED_2      0b1011
-#define C_ERROR         0b110
+#define C_ERROR         0b1100
 #define C_OK            0b1101
 #define C_ACK           0b1110
 #define C_NACK          0b1111
