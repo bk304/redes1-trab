@@ -1,26 +1,27 @@
 #if !defined(__MESSAGE_H__)
 #define __MESSAGE_H__
 
-#define MESSAGE_SIZE 67                             // 67 bytes.
+#define MESSAGE_SIZE_BYTES 67                       // 67 bytes.
 #define START_FRAME_DELIMITER_BITFIELD_SIZE 8       // 8 bits.
 #define LENGTH_BITFIELD_SIZE 6                      // 6 bits.
 #define SEQUENCE_BITFIELD_SIZE 6                    // 6 bits.
 #define TYPE_BITFIELD_SIZE 4                        // 4 bits.
 #define DATA_MAX_SIZE 504                           // 504 bits. 63 bytes.
+#define DATA_MAX_SIZE_BYTES 63                      // 504 bits. 63 bytes.
 #define PARITY_BITFIELD_SIZE 8                      // 8 bits.
 
-typedef struct t_message {
-    start_frame_delimiter: START_FRAME_DELIMITER_BITFIELD_SIZE;
-    length: LENGTH_BITFIELD_SIZE;
-    sequence: SEQUENCE_BITFIELD_SIZE;
-    type: TYPE_BITFIELD_SIZE;
-    data: DATA_MAX_SIZE;
-    parity: PARITY_BITFIELD_SIZE;
-} t_message;
-
 typedef struct t_message_data {
-    char data[63];
+    char data[DATA_MAX_SIZE_BYTES];
 } t_message_data;
+
+typedef struct t_message {
+    unsigned char start_frame_delimiter: START_FRAME_DELIMITER_BITFIELD_SIZE;
+    unsigned char length: LENGTH_BITFIELD_SIZE;
+    unsigned char sequence: SEQUENCE_BITFIELD_SIZE;
+    unsigned char type: TYPE_BITFIELD_SIZE;
+    t_message_data data;
+    unsigned char parity: PARITY_BITFIELD_SIZE;
+} t_message;
 
 #define START_FRAME_DELIMITER 0b01111110
 

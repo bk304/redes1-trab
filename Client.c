@@ -13,15 +13,17 @@
 
 int main(void){
     int socket = ConexaoRawSocket("lo");
-    char data_buffer[MESSAGE_SIZE];
+    t_message message;
+    set_start_delimiter(&message);
+    t_message_data message_data;
     int bytes_written;
 
-    data_buffer[0] = START_FRAME_DELIMITER;
-    char *message_data = "Olá!\n";
-    strcpy( &data_buffer[1], message_data );
+    char *hello_world = "Olá.\n";
+    strcpy( (char *) &message_data, hello_world );
+    set_message(&message, sizeof(hello_world), 0, C_UNUSED_1, &message_data);
 
     printf("Escrevendo no Socket...\n");
-    bytes_written = send(socket, data_buffer, MESSAGE_SIZE, 0);
+    bytes_written = send(socket, &message, MESSAGE_SIZE_BYTES, 0);
 
     if(bytes_written == -1){
         printf("ERRO NO WRITE\n    %s\n", strerror(errno));
