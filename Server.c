@@ -23,12 +23,13 @@ int main(void) {
 
     printf("Lendo socket...\n");
     for (;;) {
-        read_status = recv(socket, message, MESSAGE_SIZE_BYTES, 0);
+        read_status = recv(socket, packet, PACKET_MAX_SIZE, 0);
         // if( data_buffer[0] == START_FRAME_DELIMITER ){
         //     printf("%s\n", &data_buffer[1]);
         //     data_buffer[0] = 0x00;
         // }
         printf(":%d\n", read_status);
+        printf(":%02x%02x\n", ethernet_packet->len_or_type[0], ethernet_packet->len_or_type[1]);
         printf("%s\n", (char *)&message->data);
         memset(&message->data, 0, DATA_MAX_SIZE_BYTES);
 
