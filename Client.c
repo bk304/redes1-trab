@@ -12,7 +12,7 @@
 #include "ethernet.h"
 #include "message.h"
 
-#define PACKET_MAX_SIZE 65536  // 64 MBytes
+#define PACKET_MAX_SIZE 65536  // 64 KBytes
 
 int main(void) {
     int socket = ConexaoRawSocket("lo");
@@ -20,9 +20,8 @@ int main(void) {
     t_ethernet_frame *ethernet_packet = (t_ethernet_frame *)packet;
     memset(ethernet_packet->mac_destination, 0x00, 6);
     memset(ethernet_packet->mac_source, 0x00, 6);
-    ethernet_packet->len_or_type[0] = 0x73;
-    ethernet_packet->len_or_type[1] = 0x04;
-    t_message *message = (t_message *)&ethernet_packet->payload;
+    *((short *) ethernet_packet->len_or_type) = htons(0x7304);
+    t_message *message = (t_message *)ethernet_packet->payload;
     set_start_delimiter(message);
     t_message_data message_data;
     int bytes_written;
