@@ -1,5 +1,6 @@
 
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,26 +26,25 @@ int main(void) {
     for (;;) {
         read_status = recv(socket, packet, PACKET_MAX_SIZE, 0);
 
-        if(read_status == -1){
+        if (read_status == -1) {
             printf("ERRO NO READ\n    %s\n", strerror(errno));
             exit(-1);
         }
 
-        ethernet_packet = (t_ethernet_frame *) packet;
+        ethernet_packet = (t_ethernet_frame *)packet;
 
-        if( *(short *)(ethernet_packet->len_or_type) != htons(0x7304)){
+        if (*(short *)(ethernet_packet->len_or_type) != htons(0x7304)) {
             continue;
         }
 
         message = (t_message *)ethernet_packet->payload;
 
-        if(message->start_frame_delimiter != START_FRAME_DELIMITER){
+        if (message->start_frame_delimiter != START_FRAME_DELIMITER) {
             continue;
         }
 
-
-        printf("%s\n", message->data);
-
+        fprintf(stdout, "Pacote recebido.\n");
+        fprintf(stdout, "%s", message->data.data);
 
         memset(packet, 0x00, read_status);
     }

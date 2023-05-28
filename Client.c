@@ -1,5 +1,6 @@
 
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,18 +21,20 @@ int main(void) {
     t_ethernet_frame *ethernet_packet = (t_ethernet_frame *)packet;
     memset(ethernet_packet->mac_destination, 0x00, 6);
     memset(ethernet_packet->mac_source, 0x00, 6);
-    *((short *) ethernet_packet->len_or_type) = htons(0x7304);
+    *((short *)ethernet_packet->len_or_type) = htons(0x7304);
     t_message *message = (t_message *)ethernet_packet->payload;
     set_start_delimiter(message);
     t_message_data message_data;
     int bytes_written;
 
-    char *hello_world = "Olá.\n";
+    char *str = "Olá. Isso é um texte.\n";
+    char *hello_world = malloc(sizeof(str));
+    strcpy(hello_world, str);
     strcpy((char *)&message_data, hello_world);
     set_message(message, sizeof(hello_world), 0, C_UNUSED_1, &message_data);
 
     printf("Escrevendo no Socket...\n");
-    bytes_written = send(socket, message, MESSAGE_SIZE_BYTES, 0);
+    bytes_written = send(socket, packet, MESSAGE_SIZE_BYTES, 0);
 
     if (bytes_written == -1) {
         printf("ERRO NO WRITE\n    %s\n", strerror(errno));
