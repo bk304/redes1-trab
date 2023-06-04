@@ -49,7 +49,10 @@ typedef struct t_message {
 #define FILE_NOT_FOUND 2
 #define NO_READ_PERMISSION 3
 
+// Inicializa a estrutura do pacote e da mensagem.
+// O buffer do pacote deve ser ter, no mínimo, tamanho PACKET_SIZE_BYTES.
 t_message *init_message(void *packet_buffer);
+
 char *message_type_str(unsigned char type_code);
 
 int send_message(int socket, t_message *message, int seq, int type, void *data, int length);
