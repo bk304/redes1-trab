@@ -10,31 +10,18 @@
 #include <unistd.h>
 
 #include "ConexaoRawSocket.h"
-#include "ethernet.h"
 #include "message.h"
-
-#define PACKET_MAX_SIZE 65536  // 64 KBytes
 
 int main(void) {
     int socket = ConexaoRawSocket("lo");
-    void *packet = malloc(PACKET_MAX_SIZE * sizeof(unsigned char));
-    t_ethernet_frame *ethernet_packet = (t_ethernet_frame *)packet;
-    memset(ethernet_packet->mac_destination, 0x00, 6);
-    memset(ethernet_packet->mac_source, 0x00, 6);
-    *((short *)ethernet_packet->len_or_type) = htons(0x7304);
-    t_message *message = (t_message *)ethernet_packet->payload;
-    set_start_delimiter(message);
-    t_message_data message_data;
+    void *packet_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
+    t_message *message = init_message(packet_buffer);
     int bytes_written;
 
-    char *str = "Olá. Isso é um texte.\n";
-    char *hello_world = malloc(sizeof(str));
-    strcpy(hello_world, str);
-    strcpy((char *)&message_data, hello_world);
-    set_message(message, sizeof(hello_world), 0, C_UNUSED_1, &message_data);
+    char *str = "Olá. Isso é um teste.\n";
 
     printf("Escrevendo no Socket...\n");
-    bytes_written = send(socket, packet, MESSAGE_SIZE_BYTES, 0);
+    bytes_written = send_message(socket, message, 0, C_UNUSED_1, (void *)str, strlen(str));
 
     if (bytes_written == -1) {
         printf("ERRO NO WRITE\n    %s\n", strerror(errno));
