@@ -11,16 +11,12 @@
 #define DATA_MAX_SIZE_BYTES 63                 // 504 bits. 63 bytes.
 #define PARITY_BITFIELD_SIZE 8                 // 8 bits.
 
-typedef struct t_message_data {
-    char data[DATA_MAX_SIZE_BYTES];
-} t_message_data;
-
 typedef struct t_message {
     unsigned char start_frame_delimiter : START_FRAME_DELIMITER_BITFIELD_SIZE;
     unsigned char length : LENGTH_BITFIELD_SIZE;
     unsigned char sequence : SEQUENCE_BITFIELD_SIZE;
     unsigned char type : TYPE_BITFIELD_SIZE;
-    t_message_data data;
+    unsigned char data[DATA_MAX_SIZE_BYTES];
     unsigned char parity : PARITY_BITFIELD_SIZE;
 } t_message;
 
@@ -53,6 +49,7 @@ typedef struct t_message {
 #define NO_READ_PERMISSION 3
 
 void set_start_delimiter(t_message *message);
-void set_message(t_message *message, int length, int seq, int type, t_message_data *data);
+void set_message(t_message *message, int length, int seq, int type, void *data);
+char *message_type_str(unsigned char type_code);
 
 #endif  // __MESSAGE_H__
