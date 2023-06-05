@@ -21,7 +21,7 @@ int main(void) {
     char *str = "Olá. Isso é um teste.\n";
 
     printf("Escrevendo no Socket...\n");
-    bytes_written = send_message(socket, message, 0, C_UNUSED_1, (void *)str, strlen(str));
+    bytes_written = send_message(socket, message, 0, C_MD5, (void *)str, strlen(str));
 
     if (bytes_written == -1) {
         printf("ERRO NO WRITE\n    %s\n", strerror(errno));

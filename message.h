@@ -32,11 +32,11 @@ typedef struct t_message {
 #define C_CD_SERVER 0b0100
 #define C_VERIFY 0b0101
 #define C_FILE_NAME 0b0110
-#define C_UNUSED_1 0b0111
+#define C_MD5 0b0111
 #define C_DATA 0b1000
 #define C_END_OF_FILE 0b1001
 #define C_END_OF_GROUP 0b1010
-#define C_UNUSED_2 0b1011
+#define C_UNUSED 0b1011
 #define C_ERROR 0b1100
 #define C_OK 0b1101
 #define C_ACK 0b1110
