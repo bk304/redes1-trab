@@ -83,6 +83,7 @@ int receive_message(int socket, t_message *message) {
 
     for (;;) {
         read_status = recv(socket, packet, PACKET_SIZE_BYTES, MSG_TRUNC);
+        read_status = recv(socket, packet, PACKET_SIZE_BYTES, MSG_TRUNC);
 
         if (read_status == -1) {
             return read_status;

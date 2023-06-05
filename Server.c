@@ -63,9 +63,11 @@ int main(void) {
         }
 
         // ação
+        fprintf(stdout, "Pacote recebido.\n");
+        fprintf(stdout, "%s", message->data);
 
         // envia resposta
-        memset(packet, 0x00, read_status);
+        memset(message, 0x00, MESSAGE_SIZE_BYTES);
     }
 
     return 0;
