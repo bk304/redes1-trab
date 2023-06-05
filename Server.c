@@ -119,43 +119,6 @@ int main(void) {
                 break;
         }
 
-        // switch (message->type) {
-        //     case C_BACKUP_1FILE:
-        //         break;
-        //     case C_BACKUP_GROUP:
-        //         break;
-        //     case C_RECOVER_1FILE:
-        //         break;
-        //     case C_RECOVER_GROUP:
-        //         break;
-        //     case C_CD_SERVER:
-        //         break;
-        //     case C_VERIFY:
-        //         break;
-        //     case C_FILE_NAME:
-        //         break;
-        //     case C_MD5:
-        //         break;
-        //     case C_DATA:
-        //         break;
-        //     case C_END_OF_FILE:
-        //         break;
-        //     case C_END_OF_GROUP:
-        //         break;
-        //     case C_UNUSED:
-        //         break;
-        //     case C_ERROR:
-        //         break;
-        //     case C_OK:
-        //         break;
-        //     case C_ACK:
-        //         break;
-        //     case C_NACK:
-        //         break;
-        //     default:
-        //         continue;
-        // }
-
         // ação
         fprintf(stdout, "Pacote recebido.\n");
         fprintf(stdout, "%s", message->data);
