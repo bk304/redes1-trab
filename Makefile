@@ -14,8 +14,8 @@ ifeq ($(filter debug,$(MAKECMDGOALS)),debug)
 CFLAGS += -DDEBUG
 endif
 
-RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-$(eval $(RUN_ARGS):;@:)]
+RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS)) \
+	$(eval $(RUN_ARGS):;@:)]
 
 client: Client.c ConexaoRawSocket.o message.o
 	gcc $(CFLAGS) -o client Client.c ConexaoRawSocket.o message.o $(WARNING)
@@ -29,7 +29,7 @@ ConexaoRawSocket.o: ConexaoRawSocket.c ConexaoRawSocket.h
 message.o: message.c message.h
 	gcc $(CFLAGS) -o message.o -c message.c $(WARNING)
 
-lo: CFLAGS += -DNETINTERFACE='lo' 
+lo: CFLAGS += -DNETINTERFACE=\"lo\" 
 lo: client server
 
 clean:
