@@ -117,7 +117,14 @@ int main(int argc, char *argv[]) {
                     case C_RECOVER_GROUP:
                         break;
 
-                    case 
+                     case CDSV:
+                        break;
+
+                    case VERIFICAR:
+                        break;
+
+                    default:
+                        break;
                 }
 
                 break;
