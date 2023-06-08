@@ -55,7 +55,7 @@ t_message *init_message(void *packet_buffer);
 
 char *message_type_str(unsigned char type_code);
 
-int send_message(int socket, t_message *message, int seq, int type, void *data, int length);
+int send_message(int socket, t_message *message);
 int receive_message(int socket, t_message *message);
 
 #endif  // __MESSAGE_H__

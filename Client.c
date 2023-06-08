@@ -42,8 +42,11 @@ unsigned long hash_function(char *str) {
     return hash_value;
 }
 
-int identifica_comando(char *argv[], int argc) {
+void printModoDeUso(void) {
+    printf("Modo de Uso:\n\t$ client [backup|rec|cdsv|verificar|cd] [arquivos]\n");
+}
 
+int identifica_comando(char *argv[], int argc) {
     int comando = -1;
 
     switch (hash_function(argv[1])) {
@@ -66,15 +69,15 @@ int identifica_comando(char *argv[], int argc) {
             break;
 
         case CDSV:
-            comando = CDSV;
+            comando = C_CD_SERVER;
             break;
 
         case VERIFICAR:
-            comando = VERIFICAR;
+            comando = C_VERIFY;
             break;
 
         case CD:
-            comando = CD;
+            comando = C_UNUSED_2;
             break;
 
         default:
@@ -87,24 +90,36 @@ int identifica_comando(char *argv[], int argc) {
 
 int main(int argc, char *argv[]) {
     if (argc <= 1) {
-        printf("Modo de Uso:\n\t$ client [backup|rec|cdsv|verificar|cd] [arquivos]\n");
+        printModoDeUso();
         exit(0);
     }
 
-    //int socket = ConexaoRawSocket(NETINTERFACE);
-    void *packet_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
-    t_message *message = init_message(packet_buffer);
-    int bytes_written;
+    int socket = ConexaoRawSocket(NETINTERFACE);
 
+    void *packets_buffer = malloc(2 * PACKET_SIZE_BYTES * sizeof(unsigned char));
+    void *send_packet_buffer = packets_buffer;
+    void *receive_packet_buffer = packets_buffer + PACKET_SIZE_BYTES;
+
+    t_message *message = init_message(send_packet_buffer);
+    t_message *response = init_message(receive_packet_buffer);
+
+    int bytes_sent;
+    int bytes_received;
+    FILE *curr_file = NULL;
+    unsigned long curr_seq = 0;
     int estado = PROMPT_DE_COMANDO;
     int comando = identifica_comando(argv, argc);
+    if (comando == -1) {
+        printModoDeUso();
+        exit(-1);
+    }
 
-    for(;;){
-        switch(estado){
+    for (char breakLoop = 0; !breakLoop;) {
+        switch (estado) {
             //
             case PROMPT_DE_COMANDO:
 
-                switch(comando){
+                switch (comando) {
                     case C_BACKUP_1FILE:
                         break;
 
@@ -117,61 +132,58 @@ int main(int argc, char *argv[]) {
                     case C_RECOVER_GROUP:
                         break;
 
-                     case CDSV:
+                    case C_CD_SERVER:
                         break;
 
-                    case VERIFICAR:
+                    case C_VERIFY:
+                        break;
+
+                    case C_UNUSED_2:
                         break;
 
                     default:
                         break;
-                }
+                }  // switch (comando)
 
-                break;
+                break;  // case PROMPT_DE_COMANDO:
 
-            
             //
             case ENVIANDO_BACKUP_FILE:
                 break;
 
-            
             //
             case ENVIANDO_BACKUP_GROUP:
                 break;
-
 
             //
             case RECEBENDO_REC_FILE:
                 break;
 
-
             //
             case RECEBENDO_REC_GROUP:
                 break;
 
-            
             //
             case ESPERANDO_MD5:
                 break;
+
+        }  // switch (estado)
+
+        bytes_sent = send_message(socket, message);
+        if (bytes_sent == -1) {
+            printf("ERRO NO WRITE\n    %s\n", strerror(errno));
+            exit(-1);
         }
-    }
 
-    if (comando == -1) {
-        printf("ruim\n");
-        exit(-1);
-    }
+        bytes_received = receive_message(socket, response);
+        if (bytes_received == -1) {
+            printf("ERRO NO READ\n    %s\n", strerror(errno));
+            exit(-1);
+        }
+        // Essa resposta recebida deve ser tratada sendo da função especifica do caso.
 
-    printf("%d\n", comando);
+    }  // for (;;)
+
+    free(packets_buffer);
     exit(0);
-
-    // bytes_written = send_message(socket, message, 0, C_UNUSED_1, (void *)str, strlen(str));
-
-    if (bytes_written == -1) {
-        printf("ERRO NO WRITE\n    %s\n", strerror(errno));
-        exit(-1);
-    } else {
-        printf("%d bytes escritos.\n", bytes_written);
-    }
-
-    return 0;
 }

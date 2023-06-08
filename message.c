@@ -64,15 +64,7 @@ char *message_type_str(unsigned char type_code) {
     return NULL;
 }
 
-int send_message(int socket, t_message *message, int seq, int type, void *data, int length) {
-    if (length < 0 || length > DATA_MAX_SIZE_BYTES)
-        return -1;
-
-    message->length = length;
-    message->sequence = seq;
-    message->type = type;
-    (void)memcpy(message->data, data, length);
-
+int send_message(int socket, t_message *message) {
     return send(socket, packetPtr_from_message(message), PACKET_SIZE_BYTES, 0);
 }
 
