@@ -26,16 +26,20 @@ enum estados {
 
 int main(void) {
     int socket = ConexaoRawSocket(NETINTERFACE);
-    void *packet_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
-    t_message *message = init_message(packet_buffer);
-    int read_status = 0;
 
+    void packets_buffer = malloc(2 * PACKET_SIZE_BYTES * sizeof(unsigned char));
+    t_message *message = init_message(packets_buffer);                       // Você envia uma mensagem. (Pacote enviado)
+    t_message *response = init_message(packets_buffer + PACKET_SIZE_BYTES);  // Você recebe uma resposta. (Pacote recebido)
+
+    int bytes_written = 0;
+    int read_status = 0;
     int estado = ESPERANDO_COMANDO;
+    FILE *curr_file = NULL;
+    unsigned long curr_seq = 0;
 
     printf("Lendo socket...\n");
-    for (;;) {
-        read_status = receive_message(socket, message);
-
+    for (char breakLoop = 0; !breakLoop;) {
+        read_status = receive_message(socket, response);
         if (read_status == -1) {
             printf("ERRO NO READ\n    %s\n", strerror(errno));
             exit(-1);
@@ -57,8 +61,8 @@ int main(void) {
                         break;
                     default:
                         break;
-                }
-                break;
+                }       // switch (message->type)
+                break;  // case ESPERANDO_COMANDO
 
             // ==
             case BACKUP_FILE:
@@ -69,8 +73,8 @@ int main(void) {
                         break;
                     default:
                         break;
-                }
-                break;
+                }       // switch (message->type)
+                break;  // case BACKUP_FILE
 
             // ==
             case BACKUP_GROUP:
@@ -85,8 +89,8 @@ int main(void) {
                         break;
                     default:
                         break;
-                }
-                break;
+                }       // switch (message->type)
+                break;  // case BACKUP_GROUP
 
             // ==
             case REC_FILE:
@@ -97,8 +101,8 @@ int main(void) {
                         break;
                     default:
                         break;
-                }
-                break;
+                }       // switch (message->type)
+                break;  // case REC_FILE
 
             // ==
             case REC_GROUP:
@@ -113,21 +117,22 @@ int main(void) {
                         break;
                     default:
                         break;
-                }
-                break;
+                }       // switch (message->type)
+                break;  // case REC_GROUP
 
             // ==
             default:
                 break;
+        }  // switch (estado)
+
+        bytes_written = send_message(socket, message);
+        if (bytes_written == -1) {
+            printf("ERRO NO WRITE\n    %s\n", strerror(errno));
+            exit(-1);
         }
 
-        // ação
-        fprintf(stdout, "Pacote recebido.\n");
-        fprintf(stdout, "%s", message->data);
+    }  // for (;;)
 
-        // envia resposta
-        memset(message, 0x00, MESSAGE_SIZE_BYTES);
-    }
-
-    return 0;
+    free(packets_buffer);
+    exit(0);
 }
