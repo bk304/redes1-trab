@@ -11,6 +11,7 @@
 
 #include "ConexaoRawSocket.h"
 #include "message.h"
+#include "pilha.h"
 
 #ifndef NETINTERFACE
 #error NETINTERFACE não está definido. Use "make [interface de rede]"
@@ -88,7 +89,20 @@ int identifica_comando(char *argv[], int argc) {
     return comando;
 }
 
+void libera_e_sai(__attribute__((unused)) int exitCode, void *freeHeap) {
+    void *ptr = NULL;
+    while (desempilhar((type_pilha *)freeHeap, &ptr)) {
+        free(ptr);
+    }
+
+    destruir_pilha((type_pilha *)freeHeap);
+    printf("%s\n", strerror(errno));
+}
+
 int main(int argc, char *argv[]) {
+    type_pilha *freeHeap = criar_pilha(sizeof(void *));
+    on_exit(libera_e_sai, freeHeap);
+
     if (argc <= 1) {
         printModoDeUso();
         exit(0);
@@ -97,6 +111,7 @@ int main(int argc, char *argv[]) {
     int socket = ConexaoRawSocket(NETINTERFACE);
 
     void *packets_buffer = malloc(2 * PACKET_SIZE_BYTES * sizeof(unsigned char));
+    empilhar(freeHeap, packets_buffer);
     void *send_packet_buffer = packets_buffer;
     void *receive_packet_buffer = packets_buffer + PACKET_SIZE_BYTES;
 
@@ -171,19 +186,18 @@ int main(int argc, char *argv[]) {
 
         bytes_sent = send_message(socket, message);
         if (bytes_sent == -1) {
-            printf("ERRO NO WRITE\n    %s\n", strerror(errno));
+            printf("ERRO NO WRITE");
             exit(-1);
         }
 
         bytes_received = receive_message(socket, response);
         if (bytes_received == -1) {
-            printf("ERRO NO READ\n    %s\n", strerror(errno));
+            printf("ERRO NO READ\n");
             exit(-1);
         }
         // Essa resposta recebida deve ser tratada sendo da função especifica do caso.
 
     }  // for (;;)
 
-    free(packets_buffer);
     exit(0);
 }
