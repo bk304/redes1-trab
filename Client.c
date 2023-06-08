@@ -100,8 +100,8 @@ int main(int argc, char *argv[]) {
     void *send_packet_buffer = packets_buffer;
     void *receive_packet_buffer = packets_buffer + PACKET_SIZE_BYTES;
 
-    t_message *message = init_message(send_packet_buffer);
-    t_message *response = init_message(receive_packet_buffer);
+    t_message *message = init_message(send_packet_buffer);      // Você envia uma mensagem. (Pacote enviado)
+    t_message *response = init_message(receive_packet_buffer);  // Você recebe uma resposta. (Pacote recebido)
 
     int bytes_sent;
     int bytes_received;
