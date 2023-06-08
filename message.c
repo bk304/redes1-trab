@@ -41,7 +41,7 @@ char *message_type_str(unsigned char type_code) {
             return "verificar integridade de arquivo";
         case C_FILE_NAME:
             return "arquivo com nome";
-        case C_UNUSED_1:
+        case C_MD5:
             return "COMANDO INEXISTENTE";
         case C_DATA:
             return "dado de arquivo";
@@ -49,7 +49,7 @@ char *message_type_str(unsigned char type_code) {
             return "fim de arquivo";
         case C_END_OF_GROUP:
             return "fim do grupo de arquivos";
-        case C_UNUSED_2:
+        case C_UNUSED:
             return "COMANDO INEXISTENTE";
         case C_ERROR:
             return "erro";
@@ -75,6 +75,9 @@ int receive_message(int socket, t_message *message) {
 
     for (;;) {
         read_status = recv(socket, packet, PACKET_SIZE_BYTES, MSG_TRUNC);
+#ifndef NETINTERFACE
+        read_status = recv(socket, packet, PACKET_SIZE_BYTES, MSG_TRUNC);
+#endif
 
         if (read_status == -1) {
             return read_status;

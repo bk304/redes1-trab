@@ -77,7 +77,7 @@ int identifica_comando(char *argv[], int argc) {
             break;
 
         case CD:
-            comando = C_UNUSED_2;
+            comando = C_UNUSED;
             break;
 
         default:
@@ -138,7 +138,7 @@ int main(int argc, char *argv[]) {
                     case C_VERIFY:
                         break;
 
-                    case C_UNUSED_2:
+                    case C_UNUSED:
                         break;
 
                     default:
