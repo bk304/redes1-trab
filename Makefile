@@ -5,7 +5,7 @@ all: client server
 debug: CFLAGS += -DDEBUG 
 debug: client server
 
-WARNING = -Wall -Wextra
+WARNING = -Wall -Wextra -Wno-packed-bitfield-compat
 
 PARAMS = 
 
