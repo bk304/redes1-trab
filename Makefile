@@ -5,7 +5,7 @@ all: client server
 debug: CFLAGS += -DDEBUG 
 debug: client server
 
-WARNING = -Wall -Wextra
+WARNING = -Wall -Wextra -Wno-packed-bitfield-compat
 
 PARAMS = 
 
@@ -14,14 +14,14 @@ ifeq ($(filter debug,$(MAKECMDGOALS)),debug)
 CFLAGS += -DDEBUG
 endif
 
-RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-$(eval $(RUN_ARGS):;@:)]
+RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS)) \
+	$(eval $(RUN_ARGS):;@:)]
 
-client: Client.c ConexaoRawSocket.o message.o
-	gcc $(CFLAGS) -o client Client.c ConexaoRawSocket.o message.o $(WARNING)
+client: Client.c ConexaoRawSocket.o message.o pilha.o
+	gcc $(CFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o $(WARNING)
 
-server: Server.c ConexaoRawSocket.o message.o
-	gcc $(CFLAGS) -o server Server.c ConexaoRawSocket.o message.o $(WARNING)
+server: Server.c ConexaoRawSocket.o message.o pilha.o
+	gcc $(CFLAGS) -o server Server.c ConexaoRawSocket.o message.o pilha.o $(WARNING)
 
 ConexaoRawSocket.o: ConexaoRawSocket.c ConexaoRawSocket.h
 	gcc $(CFLAGS) -o ConexaoRawSocket.o -c ConexaoRawSocket.c $(WARNING)
@@ -29,7 +29,10 @@ ConexaoRawSocket.o: ConexaoRawSocket.c ConexaoRawSocket.h
 message.o: message.c message.h
 	gcc $(CFLAGS) -o message.o -c message.c $(WARNING)
 
-lo: CFLAGS += -DNETINTERFACE='lo' 
+pilha.o: pilha.c pilha.h
+	gcc $(CFLAGS) -o pilha.o -c pilha.c $(WARNING)
+
+lo: CFLAGS += -DNETINTERFACE=\"lo\" 
 lo: client server
 
 clean:
