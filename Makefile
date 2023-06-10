@@ -2,12 +2,9 @@
 
 all: client server
 
-debug: CFLAGS += -DDEBUG 
-debug: client server
-
 WARNING = -Wall -Wextra -Wno-packed-bitfield-compat
 
-PARAMS = 
+CFLAGS =
 
 # Alvo "debug"
 ifeq ($(filter debug,$(MAKECMDGOALS)),debug)
@@ -15,10 +12,10 @@ CFLAGS += -DDEBUG
 endif
 
 RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS)) \
-	$(eval $(RUN_ARGS):;@:)]
+	$(eval $(RUN_ARGS):;@:)
 
-client: Client.c ConexaoRawSocket.o message.o pilha.o
-	gcc $(CFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o $(WARNING)
+client: Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o
+	gcc $(CFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o $(WARNING)
 
 server: Server.c ConexaoRawSocket.o message.o pilha.o
 	gcc $(CFLAGS) -o server Server.c ConexaoRawSocket.o message.o pilha.o $(WARNING)
@@ -31,6 +28,9 @@ message.o: message.c message.h
 
 pilha.o: pilha.c pilha.h
 	gcc $(CFLAGS) -o pilha.o -c pilha.c $(WARNING)
+
+tokenlizer.o: tokenlizer.c tokenlizer.h
+	gcc $(CFLAGS) -o tokenlizer.o -c tokenlizer.c $(WARNING)
 
 lo: CFLAGS += -DNETINTERFACE=\"lo\" 
 lo: client server

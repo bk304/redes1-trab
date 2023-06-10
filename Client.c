@@ -1,5 +1,3 @@
-
-
 #include <arpa/inet.h>
 #include <errno.h>
 #include <math.h>
@@ -14,10 +12,11 @@
 #include "ConexaoRawSocket.h"
 #include "message.h"
 #include "pilha.h"
+#include "tokenlizer.h"
 
 #ifndef NETINTERFACE
 #error NETINTERFACE não está definido. Use "make [interface de rede]"
-//  definição do macro só pro editor de texto saber que é um macro
+//   definição do macro só pro editor de texto saber que é um macro
 #define NETINTERFACE "lo"
 #endif
 
@@ -51,23 +50,29 @@ void printModoDeUso(void) {
     printf("Modo de Uso:\n\t$ client [backup|rec|cdsv|verificar|cd] [arquivos]\n");
 }
 
+int is_regular_file(const char *path) {
+    struct stat path_stat;
+    stat(path, &path_stat);
+    return S_ISREG(path_stat.st_mode);
+}
+
 int identifica_comando(char *argv[], int argc) {
     int comando = -1;
 
-    switch (hash_function(argv[1])) {
+    switch (hash_function(argv[0])) {
         case BACKUP:
-            if (argc == 3)
+            if (argc == 2)
                 comando = C_BACKUP_1FILE;
-            else if (argc > 3)
+            else if (argc > 2)
                 comando = C_BACKUP_GROUP;
             else
                 comando = -1;
             break;
 
         case REC:
-            if (argc == 3)
+            if (argc == 2)
                 comando = C_RECOVER_1FILE;
-            else if (argc > 3)
+            else if (argc > 2)
                 comando = C_RECOVER_GROUP;
             else
                 comando = -1;
@@ -105,11 +110,6 @@ void libera_e_sai(int exitCode, void *freeHeap) {
         printf("Ocorreu um erro.\n");
     }
     printf("\t%s\n", strerror(errno));
-}
-
-void close_currFile(FILE **currFile) {
-    printf("test\n");
-    fclose(*currFile);
 }
 
 int interpreta_comando(int comando) {
@@ -200,14 +200,31 @@ void envia_e_espera(int socketFD, t_message *messageT, t_message *messageR, t_me
     } while (messageR->type == C_NACK || parityError);
 }
 
-int main(int argc, char *argv[]) {
+int le_comando(int *argc, char *argv[], int *qnt_arquivos) {
+    char input[4096];
+    size_t len;
+
+    fprintf(stdout, "\t>>> ");
+    fgets(input, 4096, stdin);
+    len = strlen(input);
+    if (len > 0 && input[len - 1] == '\n')
+        input[--len] = '\0';
+    if (tokenlize(input, argc, argv)) {
+        exit(-1);
+    }
+
+    *qnt_arquivos = *argc - 1;
+    return identifica_comando(argv, *argc);
+}
+
+int main(void) {
     type_pilha *freeHeap = criar_pilha(sizeof(void *));
     on_exit(libera_e_sai, freeHeap);
 
-    if (argc <= 1) {
-        printModoDeUso();
-        exit(0);
-    }
+    // if (argc <= 1) {
+    //     printModoDeUso();
+    //     exit(0);
+    // }
 
     int socket = ConexaoRawSocket(NETINTERFACE);
 
@@ -217,40 +234,62 @@ int main(int argc, char *argv[]) {
     t_message *messageR = init_message(packets_buffer + PACKET_SIZE_BYTES);      // Você recebe uma resposta. (Pacote recebido)
     t_message *messageA = init_message(packets_buffer + 2 * PACKET_SIZE_BYTES);  // Usado apenas para enviar mensagens de ACK e NACK
 
+    int argc;
+    char *argv[4096];
     FILE *curr_file = NULL;
-    int quantidade_arquivos = argc - 2;
+    int quantidade_arquivos = 0;
+    int arquivos_enviados = 0;
     unsigned char curr_seq = 0;
     unsigned char total_seq = 0;
     int estado = PROMPT_DE_COMANDO;
-    int comando = identifica_comando(argv, argc);
-    if (comando == -1) {
-        printModoDeUso();
-        exit(-1);
-    }
+    int comando;
 
     for (;;) {
         switch (estado) {
             // ==
             case PROMPT_DE_COMANDO:
                 curr_seq = 0;
+                comando = le_comando(&argc, argv, &quantidade_arquivos);
+                if (comando == -1) {
+                    printModoDeUso();
+                    break;
+                }
+
                 estado = interpreta_comando(comando);
+                if (estado == EXECUTANDO_BACKUP) {
+                    for (int i = 1; i < argc; i++) {
+                        if (access(argv[i], R_OK) != 0) {
+                            printf("  \"%s\" \033[1;31m(Arquivo inexistante ou sem permissão de leitura)\033[0m\n", argv[i]);
+                            estado = PROMPT_DE_COMANDO;
+                        } else if (!is_regular_file(argv[i])) {
+                            printf("  \"%s\" \033[1;31m(Arquivo não é um arquivo regular)\033[0m\n", argv[i]);
+                            estado = PROMPT_DE_COMANDO;
+                        } else {
+                            printf("  \"%s\"\n", argv[i]);
+                        }
+                    }
+                }
+
+                if (estado == PROMPT_DE_COMANDO) {
+                    printf("\033[1;31mOperação abortada.\033[0m\n");
+                }
                 break;
 
             // ==
             case EXECUTANDO_BACKUP:
-                if (quantidade_arquivos <= 0) {
-                    estado = EXIT;  // QUANDO HOUVER BASH, ISSO PODE RETORNAR PARA O PROMPT_DE_COMANDO
+                if (arquivos_enviados >= quantidade_arquivos) {
+                    estado = PROMPT_DE_COMANDO;
                     continue;
                 }
-                if (f_backup_file(messageT, &curr_file, argv[quantidade_arquivos + 1], &total_seq) == 0) {
+                if (f_backup_file(messageT, &curr_file, argv[arquivos_enviados + 1], &total_seq) == 0) {
                     envia_e_espera(socket, messageT, messageR, messageA);
-                    if (messageR->type == C_OK)
+                    if (messageR->type == C_OK) {
                         estado = ENVIANDO_BACKUP_FILE;
-                    else
+                    } else
                         estado = ERRO;
                 } else
                     estado = ERRO;
-                quantidade_arquivos -= 1;
+                arquivos_enviados += 1;
                 break;
 
             // ==
@@ -260,10 +299,19 @@ int main(int argc, char *argv[]) {
                 envia_e_espera(socket, messageT, messageR, messageA);
                 if (messageR->type == C_ACK) {
                     // mantem o estado
-                } else if (messageR->type == C_OK) {
+                } else if (messageR->type == C_OK) {  // Enviou todo o arquivo.
                     estado = EXECUTANDO_BACKUP;
-                } else
+                    fprintf(stdout, "\033[%dA\033[0K\r", quantidade_arquivos - arquivos_enviados + 1);
+                    fprintf(stdout, "  \"%s\" \033[0;32m(Enviado)", argv[arquivos_enviados]);
+                    fprintf(stdout, "\033[%dB\033[0K\r\033[0m", quantidade_arquivos - arquivos_enviados + 1);
+                    fflush(stdout);
+                } else {
+                    fprintf(stdout, "\033[%dA\033[0K\r", quantidade_arquivos - arquivos_enviados + 1);
+                    fprintf(stdout, "  \"%s\" \033[1;31m(ERRO)", argv[arquivos_enviados]);
+                    fprintf(stdout, "\033[%dB\033[0K\r\033[0m", quantidade_arquivos - arquivos_enviados + 1);
+                    fflush(stdout);
                     estado = ERRO;
+                }
                 break;
 
             // ==
