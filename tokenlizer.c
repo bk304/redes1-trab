@@ -1,5 +1,6 @@
 #include "tokenlizer.h"
 
+#include <glob.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,8 +22,8 @@ char *strdup(const char *s) {
     return result;
 }
 
-int insert(char *word, char c) {
-    strncat(word, &c, sizeof(char));
+char *insert(char *word, char c) {
+    return strncat(word, &c, sizeof(char));
 }
 
 char *newWord(int length) {
@@ -32,6 +33,18 @@ char *newWord(int length) {
     } else {
         word[0] = '\0';
     }
+
+    return word;
+}
+
+int hasStar(char *str) {
+    int i = 0;
+    for (char c = str[0]; c != '\0'; c = str[++i]) {
+        if (c == '*')
+            return 1;
+    }
+
+    return 0;
 }
 
 void resetWord(char *word) {
@@ -45,13 +58,36 @@ char isSpace(unsigned char c) {
 
 int includeArg(char *word, int *argc, char *argv[]) {
     char *newArgument;
+    glob_t result;
+    int status;
 
-    newArgument = strdup(word);
-    if (newArgument == NULL) {
-        free(word);
-        return 0;
+    if (!hasStar(word)) {
+        newArgument = strdup(word);
+        if (newArgument == NULL) {
+            free(word);
+            return 0;
+        }
+        argv[(*argc)++] = newArgument;
+    } else {
+        status = glob(word, 0, NULL, &result);
+        if (status != 0) {
+            free(word);
+            printf("ERRO NO glob: %d\n", status);
+            return 0;
+        }
+
+        for (size_t i = 0; i < result.gl_pathc; i++) {
+            newArgument = strdup(result.gl_pathv[i]);
+            if (newArgument == NULL) {
+                free(word);
+                return 0;
+            }
+            argv[(*argc)++] = newArgument;
+        }
+
+        globfree(&result);
     }
-    argv[(*argc)++] = newArgument;
+
     resetWord(word);
 
     return 1;
