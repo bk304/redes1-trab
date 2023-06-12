@@ -12,6 +12,8 @@
 #define DATA_MAX_SIZE_BYTES 63                 // 504 bits. 63 bytes.
 #define PARITY_BITFIELD_SIZE 8                 // 8 bits.
 
+#define NEXT_SEQUENCE(seq) ((seq + 1) % 64)
+
 typedef struct t_message {
     unsigned char start_frame_delimiter;
     struct __attribute__((__packed__)) {
@@ -52,6 +54,12 @@ typedef struct t_message {
 #define NO_READ_PERMISSION 3
 #define UNKNOW_ERROR 4
 
+enum RECEIVE_MESSAGE_ERROR_STATUS {
+    RECVM_STATUS_PARITY_ERROR = -1,  // Algo deu errado, pode crashar.
+    RECVM_STATUS_PACKET_LOSS = -3,   // O outro lado não recebeu a sua resposta. Reenvie-a.
+    RECVM_STATUS_ERROR = -4          // A paridade está errada, envie NACK.
+};
+
 // Inicializa a estrutura do pacote e da mensagem.
 // O buffer do pacote deve ser ter, no mínimo, tamanho PACKET_SIZE_BYTES.
 t_message *init_message(void *packet_buffer);
@@ -59,8 +67,7 @@ t_message *init_message(void *packet_buffer);
 char *message_type_str(unsigned char type_code);
 
 int send_message(int socket, t_message *message);
-int send_ack(int socket, t_message *message);
-int send_nack(int socket, t_message *message);
+int send_nack(int socket, t_message *messageA, t_message *messageR);
 int receive_message(int socket, t_message *message);
 
 unsigned char message_parity(t_message *message);

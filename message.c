@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -12,7 +13,11 @@
 #define MESSAGE_PROTOCOL_ID (htons(0x7304))
 
 unsigned char selfCode = 0;
+unsigned char esperandoSeq = 1;
+unsigned char currSeq = 0;
+#ifdef LO
 unsigned char lastSeq = 90;
+#endif
 
 void *packetPtr_from_message(t_message *message) {
     return ((void *)message) - 14;
@@ -76,6 +81,8 @@ int send_message(int socket, t_message *message) {
     message->parity = message_parity(message);
     t_ethernet_frame *ethernet_packet = packetPtr_from_message(message);
     ethernet_packet->mac_source[0] = selfCode;
+    currSeq = NEXT_SEQUENCE(currSeq);
+    message->sequence = currSeq;
 #ifdef DEBUG
     printf("Enviando ");
     printMessage(message);
@@ -85,18 +92,11 @@ int send_message(int socket, t_message *message) {
     return send(socket, packetPtr_from_message(message), PACKET_SIZE_BYTES, 0);
 }
 
-int send_ack(int socket, t_message *message) {
-    message->length = 0;
-    message->sequence = 0;
-    message->type = C_ACK;
-    return send_message(socket, message);
-}
-
-int send_nack(int socket, t_message *message) {
-    message->length = 0;
-    message->sequence = 0;
-    message->type = C_NACK;
-    return send_message(socket, message);
+int send_nack(int socket, t_message *messageA, t_message *messageR) {
+    messageA->length = 0;
+    messageA->sequence = messageR->sequence;
+    messageA->type = C_NACK;
+    return send_message(socket, messageA);
 }
 
 int receive_message(int socket, t_message *message) {
@@ -108,7 +108,7 @@ int receive_message(int socket, t_message *message) {
         read_status = recv(socket, packet, PACKET_SIZE_BYTES, MSG_TRUNC);
 
         if (read_status == -1) {
-            return read_status;
+            return RECVM_STATUS_ERROR;
         }
 
         if (read_status != PACKET_SIZE_BYTES) {
@@ -127,9 +127,11 @@ int receive_message(int socket, t_message *message) {
             continue;
         }
 
+#ifdef LO
         if (message->sequence == lastSeq) {
             continue;
         }
+#endif
 
         break;
     }
@@ -141,11 +143,23 @@ int receive_message(int socket, t_message *message) {
     printf("\n");
 #endif
 
+    if (message->sequence < esperandoSeq) {
+        // O outro lado não recebeu a sua resposta. Reenvie-a.
+        return RECVM_STATUS_PACKET_LOSS;
+    } else if (message->sequence > esperandoSeq) {
+        // Algo muito errado aconteceu. Pode crashar.
+        return RECVM_STATUS_ERROR;
+    }
+    // se message->sequence == esperandoSeq
+    // tudo certo, pode continuar.
+
+    esperandoSeq = NEXT_SEQUENCE(message->sequence);
+#ifdef LO
     lastSeq = message->sequence;
+#endif
 
     if (message->parity != message_parity(message)) {
-        read_status = -2;
-        return read_status;
+        return RECVM_STATUS_PARITY_ERROR;
     }
 
     return read_status;
@@ -173,7 +187,7 @@ void printMessage(t_message *message) {
 void prinfhexMessage(t_message *message) {
     printf("> \n");
     for (int i = 0; i < MESSAGE_SIZE_BYTES; i++) {
-        printf("%02X(%d) ", ((unsigned char *)message)[i], i);
+        printf("%02X ", ((unsigned char *)message)[i]);
     }
     printf(" <\n");
 }

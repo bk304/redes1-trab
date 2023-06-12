@@ -38,32 +38,99 @@ void libera_e_sai(__attribute__((unused)) int exitCode, void *freeHeap) {
     printf("%s\n", strerror(errno));
 }
 
-void envia_e_espera(int socketFD, t_message *messageT, t_message *messageR, t_message *messageA) {
+void recebe(int socketFD, t_message *messageT, t_message *messageR, t_message *messageA) {
+    int read_status;
     int bytes_sent;
-    int bytes_received;
-    int parityError = 0;
+    int sendType = 0;
+    int isOk = 1;
 
-    do {
-        if (!parityError) {
-            bytes_sent = send_message(socketFD, messageT);
-            if (bytes_sent == -1) {
-                printf("ERRO NO WRITE\n");
-                exit(-1);
-            }
-        } else {
-            if (send_nack(socketFD, messageA) == -1) {
-                printf("ERRO NO WRITE\n");
-                exit(-1);
-            }
+    read_status = receive_message(socketFD, messageR);
+    if (read_status == RECVM_STATUS_PACKET_LOSS) {
+        sendType = 0;
+        isOk = 0;
+    } else if (read_status == RECVM_STATUS_PARITY_ERROR) {
+        sendType = 1;
+        isOk = 0;
+    } else if (read_status > 0) {
+        isOk = 1;
+    } else {  // Inclui read_status == RECVM_STATUS_ERROR
+        fprintf(stderr, "ERRO NO READ MESSAGE\n");
+        exit(-1);
+    }
+
+    while (messageR->type == C_NACK || !(isOk)) {
+        switch (sendType) {
+            case 0:  // Mensagem normal
+                bytes_sent = send_message(socketFD, messageT);
+                if (bytes_sent == -1) {
+                    fprintf(stderr, "ERRO NO WRITE MESSAGE\n");
+                    exit(-1);
+                }
+                break;
+
+            case 1:  // NACK
+                if (send_nack(socketFD, messageA, messageR) == -1) {
+                    fprintf(stderr, "ERRO NO WRITE MESSAGE\n");
+                    exit(-1);
+                }
+                break;
         }
 
-        bytes_received = receive_message(socketFD, messageR);
-        if (bytes_received == -1) {
-            printf("ERRO NO READ\n");
+        read_status = receive_message(socketFD, messageR);
+        if (read_status == RECVM_STATUS_PACKET_LOSS) {
+            sendType = 0;
+            isOk = 0;
+        } else if (read_status == RECVM_STATUS_PARITY_ERROR) {
+            sendType = 1;
+            isOk = 0;
+        } else if (read_status > 0) {
+            isOk = 1;
+        } else {  // Inclui read_status == RECVM_STATUS_ERROR
+            fprintf(stderr, "ERRO NO READ MESSAGE\n");
             exit(-1);
         }
-        parityError = (bytes_received == -2);
-    } while (messageR->type == C_NACK || parityError);
+    }
+}
+
+void envia_e_espera(int socketFD, t_message *messageT, t_message *messageR, t_message *messageA) {
+    int bytes_sent;
+    int read_status;
+    int sendType = 0;
+    int isOk = 1;
+
+    do {
+        switch (sendType) {
+            case 0:  // Mensagem normal
+                bytes_sent = send_message(socketFD, messageT);
+                if (bytes_sent == -1) {
+                    fprintf(stderr, "ERRO NO WRITE MESSAGE\n");
+                    exit(-1);
+                }
+                break;
+
+            case 1:  // NACK
+                if (send_nack(socketFD, messageA, messageR) == -1) {
+                    fprintf(stderr, "ERRO NO WRITE MESSAGE\n");
+                    exit(-1);
+                }
+                break;
+        }
+
+        read_status = receive_message(socketFD, messageR);
+        if (read_status == RECVM_STATUS_PACKET_LOSS) {
+            sendType = 0;
+            isOk = 0;
+        } else if (read_status == RECVM_STATUS_PARITY_ERROR) {
+            sendType = 1;
+            isOk = 0;
+        } else if (read_status > 0) {
+            isOk = 1;
+        } else {  // Inclui read_status == RECVM_STATUS_ERROR
+            fprintf(stderr, "ERRO NO READ MESSAGE\n");
+            exit(-1);
+        }
+
+    } while (messageR->type == C_NACK || !(isOk));
 }
 
 int main(void) {
@@ -78,30 +145,19 @@ int main(void) {
     empilhar(freeHeap, packets_buffer);
     t_message *messageT = init_message(packets_buffer);                          // Você envia uma mensagem. (Pacote enviado)
     t_message *messageR = init_message(packets_buffer + PACKET_SIZE_BYTES);      // Você recebe uma resposta. (Pacote recebido)
-    t_message *messageA = init_message(packets_buffer + 2 * PACKET_SIZE_BYTES);  // Usado apenas para enviar mensagens de ACK e NACK
+    t_message *messageA = init_message(packets_buffer + 2 * PACKET_SIZE_BYTES);  // Usado apenas para enviar mensagens de NACK
 
-    int bytes_written = 0;
-    int read_status = 0;
     int estado = ESPERANDO_COMANDO;
     FILE *curr_file = NULL;
-    unsigned char curr_seq = 0;
 
     printf("Lendo socket...\n");
     // Primeira mensagem.
-    read_status = receive_message(socket, messageR);
-    if (read_status == -1) {
-        printf("ERRO NO READ");
-        exit(-1);
-    } else if (read_status == -2) {
-        if (send_nack(socket, messageA) == -1)
-            exit(-1);
-    }
+    recebe(socket, messageT, messageR, messageA);
 
     for (char breakLoop = 0; !breakLoop;) {
         switch (estado) {
             // ==
             case ESPERANDO_COMANDO:
-                curr_seq = 0;
                 switch (messageR->type) {
                     case C_BACKUP_1FILE:
                         printf("Iniciando backup do arquivo \"%s\".\n", messageR->data);
@@ -122,7 +178,7 @@ int main(void) {
                         }
 
                         messageT->length = 0;
-                        messageT->sequence = 0;
+                        messageT->sequence = messageR->sequence;
                         break;
 
                     case C_BACKUP_GROUP:

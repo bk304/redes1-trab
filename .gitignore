@@ -2,4 +2,6 @@
 *.o
 client
 server
+./data/Avatar2.mkv
+sv/data/teste1.png
 data/Avatar2.mkv

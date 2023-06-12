@@ -32,7 +32,7 @@ pilha.o: pilha.c pilha.h
 tokenlizer.o: tokenlizer.c tokenlizer.h
 	gcc $(CFLAGS) -o tokenlizer.o -c tokenlizer.c $(WARNING)
 
-lo: CFLAGS += -DNETINTERFACE=\"lo\" 
+lo: CFLAGS += -DNETINTERFACE=\"lo\" -DLO
 lo: client server
 
 clean:
