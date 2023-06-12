@@ -1,8 +1,10 @@
 #include <pthread.h>
+#include <sched.h>
 #include <semaphore.h>
 #include <stdlib.h>
 
 #include "conectionManager.h"
+#include "message.h"
 
 sliding_window_t *window;
 pthread_t *connectionManagerThread_Transmiter;
@@ -83,6 +85,48 @@ int sw_isEmpty(sliding_window_t *window) {
 
 void sw_free(sliding_window_t *window) {
     free(window);
+}
+
+void *_receiver(void *arg) {
+    int sockedFD = *(arg[0]);
+    t_message messageR;
+    int receiveStatus;
+
+    receiveStatus = receive_message(socketFD, &messageR);
+}
+
+int cm_send_message(int socketFD, const void *buf, size_t len, int type) {
+    size_t bytesSent = 0;
+    size_t qntOfPackets = (len + DATA_MAX_SIZE_BYTES - 1) / DATA_MAX_SIZE_BYTES;
+    t_message *messages = malloc(window->capacity * sizeof(t_message));
+    pthread_t receiverThread;
+    char receiverExited = 0;
+    int *receiverExitCode = malloc(sizeof(int));
+    int exitCode;
+
+    void *args[] = [&socketFD];
+    pthread_create(&receiverThread, NULL, _receiver, args);
+
+    for (int i = 0; i < qntOfPackets; i++) {
+        // produz_pacotes
+        sw_insert(window, messages[i]);
+        send();
+        if (pthread_tryjoin_np(&receiverThread, (void **)&receiverExitCode) != EBUSY) {
+            receiverExited = 1;
+            break;
+        }
+    }
+
+    if (receiverExited == 0) {
+        pthread_join(&receiverThread, &receiverExitCode);
+    }
+
+    exitCode = *receiverExitCode;
+
+    free(messages);
+    free(receiverExitCode);
+
+    return exitCode;
 }
 
 void *cm_init(void *args) {
