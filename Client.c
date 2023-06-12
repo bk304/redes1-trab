@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,8 +11,10 @@
 #include <unistd.h>
 
 #include "ConexaoRawSocket.h"
+#include "connectionManager.h"
 #include "message.h"
 #include "pilha.h"
+#include "slidingWindow.h"
 #include "tokenlizer.h"
 
 #ifndef NETINTERFACE
@@ -233,6 +236,9 @@ int main(void) {
     t_message *messageT = init_message(packets_buffer);                          // Você envia uma mensagem. (Pacote enviado)
     t_message *messageR = init_message(packets_buffer + PACKET_SIZE_BYTES);      // Você recebe uma resposta. (Pacote recebido)
     t_message *messageA = init_message(packets_buffer + 2 * PACKET_SIZE_BYTES);  // Usado apenas para enviar mensagens de ACK e NACK
+
+    pthread_t connectionManagerThread;
+    pthread_create(&connectionManagerThread, NULL, cm_init, (void *)window);
 
     int argc;
     char *argv[4096];
