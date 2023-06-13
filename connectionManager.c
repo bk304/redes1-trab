@@ -137,9 +137,9 @@ t_message *sw_findSlot(sliding_window_t *window, t_message **messages, int capac
     t_message *data;
     sw_peek(window, (void **)&data);
     if (data == NULL)
-        data = messages[0];
+        data = &(messages[0]);
 
-    t_message *slot = messages[(((data - messages[0]) / sizeof(t_message *)) + window->size) % capacity];
+    t_message *slot = messages[(((data - &(messages[0])) / sizeof(t_message *)) + window->size) % capacity];
 
     pthread_mutex_unlock(&window->mutex);
     return slot;
