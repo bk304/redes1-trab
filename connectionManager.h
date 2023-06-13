@@ -10,7 +10,6 @@ typedef struct sliding_window_node_t {
     t_message *data;
     struct sliding_window_node_t *next;
     char inUse;
-    char validated;
 } sliding_window_node_t;
 
 typedef struct sliding_window_t {

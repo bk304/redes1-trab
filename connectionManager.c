@@ -13,6 +13,8 @@
 
 sliding_window_t *window = NULL;
 
+void sw_no_mutex_printSize(sliding_window_t *window);
+
 sliding_window_t *sw_create(int slots) {
     sliding_window_t *window = malloc(sizeof(sliding_window_t));
     window->capacity = slots;
@@ -44,10 +46,11 @@ void sw_insert(sliding_window_t *window, void *data) {
     }
 
     p->inUse = 1;
-    p->validated = 0;
     p->data = data;
 
     window->size += 1;
+
+    sw_no_mutex_printSize(window);
 
     sem_post(&window->sem_item);  // Sinaliza que já um item na janela.
     pthread_mutex_unlock(&window->mutex);
@@ -64,6 +67,8 @@ void sw_remove(sliding_window_t *window, void **data) {
     window->slots = p->next;
 
     window->size -= 1;
+
+    sw_no_mutex_printSize(window);
 
     sem_post(&window->sem_vaga);  // Libera uma vaga na janela.
     pthread_mutex_unlock(&window->mutex);
@@ -132,17 +137,27 @@ void sw_printSize(sliding_window_t *window) {
     pthread_mutex_unlock(&window->mutex);
 }
 
-t_message *sw_findSlot(sliding_window_t *window, t_message **messages, int capacity) {
-    pthread_mutex_lock(&window->mutex);
-    t_message *data;
-    sw_peek(window, (void **)&data);
-    if (data == NULL)
-        data = &(messages[0]);
+void sw_no_mutex_printSize(sliding_window_t *window) {
+    int i, v;
+    sem_getvalue(&window->sem_item, &i);
+    sem_getvalue(&window->sem_vaga, &v);
+    static int c = 0;
+    c++;
+    if (c < 6) {
+        pthread_mutex_unlock(&window->mutex);
+        return;
+    }
 
-    t_message *slot = messages[(((data - &(messages[0])) / sizeof(t_message *)) + window->size) % capacity];
+    printf("Window > Size: %d  | sem_item: %d | sem_vaga: %d \n", window->size, i, v);
 
-    pthread_mutex_unlock(&window->mutex);
-    return slot;
+    sliding_window_node_t *start = window->slots;
+    sliding_window_node_t *p = start->next;
+    printf("< %d ", (start->inUse == 1 ? start->data->sequence : -1));
+    while (p != start) {
+        printf("%d ", (p->inUse == 1 ? p->data->sequence : -1));
+        p = p->next;
+    }
+    printf(">\n");
 }
 
 int sw_isFull(sliding_window_t *window) {
@@ -159,6 +174,16 @@ int sw_isEmpty(sliding_window_t *window) {
 
 void sw_free(sliding_window_t *window) {
     free(window);
+}
+
+t_message *findSlot(t_message **messages, int capacity) {
+    static int i = 0;
+
+    t_message *slot = messages[i % capacity];
+
+    i = (i + 1) % 66;
+
+    return slot;
 }
 
 void _senderAssistant_cleanup(void *arg) {
@@ -323,7 +348,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     // Envia os segmentos
     for (int i = 0; i < qntOfPackets; i++) {
         // Produz um pacote de até DATA_MAX_SIZE_BYTES bytes
-        messageT = sw_findSlot(window, messages, (window->capacity + 1));
+        messageT = findSlot(messages, (window->capacity + 1));
         messageT->type = type;
         messageT->sequence = currSeq;
         sendLength = (yetToSend >= DATA_MAX_SIZE_BYTES ? DATA_MAX_SIZE_BYTES : yetToSend);
@@ -349,7 +374,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     }
 
     // Envia código de fim de mensagem
-    messageT = sw_findSlot(window, messages, (window->capacity + 1));
+    messageT = findSlot(messages, (window->capacity + 1));
     messageT->type = C_METAMESSAGE;
     messageT->sequence = currSeq;
     messageT->length = sizeof(char);
@@ -458,7 +483,7 @@ void *_receiverAssistant(void *arg) {
 
     // ==
     for (;;) {
-        messageR = sw_findSlot(window, messages, (window->capacity + 1));
+        messageR = findSlot(messages, (window->capacity + 1));
         receiveStatus = receive_message(socketFD, messageR);
         if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
             // Envia NACK
