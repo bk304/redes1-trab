@@ -9,13 +9,14 @@
 #include <time.h>
 
 #include "ethernet.h"
+#include "pthread.h"
 
 #define MESSAGE_PROTOCOL_ID (htons(0x7304))
 
-unsigned char selfCode = 0;
-unsigned char esperandoSeq = 1;
-unsigned char currSeq = 0;
+pthread_mutex_t *message_mutex = NULL;
+unsigned char selfIdentifier = 0;
 #ifdef LO
+unsigned char lastParity = 0xFF;
 unsigned char lastSeq = 90;
 #endif
 
@@ -24,12 +25,16 @@ void *packetPtr_from_message(t_message *message) {
 }
 
 t_message *init_message(void *packet_buffer) {
-    if (selfCode == 0)
-        selfCode = (unsigned char)time(NULL);
+    if (message_mutex == NULL) {
+        message_mutex = malloc(sizeof(pthread_mutex_t));
+        pthread_mutex_init(message_mutex, NULL);
+    }
+    if (selfIdentifier == 0)
+        selfIdentifier = (unsigned char)time(NULL);
     t_ethernet_frame *ethernet_packet = (t_ethernet_frame *)packet_buffer;
     memset(ethernet_packet->mac_destination, 0x00, 6);
     memset(ethernet_packet->mac_source, 0x00, 6);
-    ethernet_packet->mac_source[0] = selfCode;
+    ethernet_packet->mac_source[0] = selfIdentifier;
     *((short *)ethernet_packet->len_or_type) = MESSAGE_PROTOCOL_ID;
     t_message *message = (t_message *)ethernet_packet->payload;
 
@@ -62,8 +67,8 @@ char *message_type_str(unsigned char type_code) {
             return "fim de arquivo";
         case C_END_OF_GROUP:
             return "fim do grupo de arquivos";
-        case C_UNUSED:
-            return "COMANDO INEXISTENTE";
+        case C_METAMESSAGE:
+            return "Meta Mensagem";
         case C_ERROR:
             return "erro";
         case C_OK:
@@ -80,14 +85,16 @@ char *message_type_str(unsigned char type_code) {
 int send_message(int socket, t_message *message) {
     message->parity = message_parity(message);
     t_ethernet_frame *ethernet_packet = packetPtr_from_message(message);
-    ethernet_packet->mac_source[0] = selfCode;
-    currSeq = NEXT_SEQUENCE(currSeq);
-    message->sequence = currSeq;
+    ethernet_packet->mac_source[0] = selfIdentifier;
 #ifdef DEBUG
+    pthread_mutex_lock(message_mutex);
+    printf("\033[0;32m");
     printf("Enviando ");
     printMessage(message);
     prinfhexMessage(message);
+    printf("\033[0m");
     printf("\n");
+    pthread_mutex_unlock(message_mutex);
 #endif
     return send(socket, packetPtr_from_message(message), PACKET_SIZE_BYTES, 0);
 }
@@ -123,12 +130,22 @@ int receive_message(int socket, t_message *message) {
             continue;
         }
 
-        if (ethernet_packet->mac_source[0] == selfCode) {
+        if (ethernet_packet->mac_source[0] == selfIdentifier) {
             continue;
         }
 
 #ifdef LO
-        if (message->sequence == lastSeq) {
+        if (message->parity == lastParity && message->sequence == lastSeq) {
+#ifdef SHOWDELETED
+            pthread_mutex_lock(message_mutex);
+            printf("\033[1;31m");
+            printf("MENSAGEM BLOQUEADA ");
+            printMessage(message);
+            prinfhexMessage(message);
+            printf("\033[0m");
+            printf("\n");
+            pthread_mutex_unlock(message_mutex);
+#endif
             continue;
         }
 #endif
@@ -137,24 +154,18 @@ int receive_message(int socket, t_message *message) {
     }
 
 #ifdef DEBUG
+    pthread_mutex_lock(message_mutex);
+    printf("\033[1;33m");
     printf("Recebido ");
     printMessage(message);
     prinfhexMessage(message);
+    printf("\033[0m");
     printf("\n");
+    pthread_mutex_unlock(message_mutex);
 #endif
 
-    if (message->sequence < esperandoSeq) {
-        // O outro lado não recebeu a sua resposta. Reenvie-a.
-        return RECVM_STATUS_PACKET_LOSS;
-    } else if (message->sequence > esperandoSeq) {
-        // Algo muito errado aconteceu. Pode crashar.
-        return RECVM_STATUS_ERROR;
-    }
-    // se message->sequence == esperandoSeq
-    // tudo certo, pode continuar.
-
-    esperandoSeq = NEXT_SEQUENCE(message->sequence);
 #ifdef LO
+    lastParity = message->parity;
     lastSeq = message->sequence;
 #endif
 

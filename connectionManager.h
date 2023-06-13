@@ -1,10 +1,19 @@
 #ifndef CONNECTION_MANAGET_H
 #define CONNECTION_MANAGET_H
 
-typedef struct pthread_mutex_t pthread_mutex_t;
-typedef struct sem_t sem_t;
+#include <pthread.h>
+#include <semaphore.h>
 
-typedef struct sliding_window {
+#include "message.h"
+
+typedef struct sliding_window_node_t {
+    t_message *data;
+    struct sliding_window_node_t *next;
+    char inUse;
+    char validated;
+} sliding_window_node_t;
+
+typedef struct sliding_window_t {
     sliding_window_node_t *slots;
     int capacity;
     int size;
@@ -12,13 +21,6 @@ typedef struct sliding_window {
     sem_t sem_vaga;  // Semáforo para controlar as vagas disponíveis na fila
     sem_t sem_item;  // Semáforo para controlar a disponibilidade de itens na fila
 } sliding_window_t;
-
-typedef struct sliding_window_node {
-    void *data;
-    sliding_window_node_t *next;
-    char inUse;
-    char validated;
-} sliding_window_node_t;
 
 sliding_window_t *sw_create(int slots);
 
@@ -28,6 +30,9 @@ void sw_insert(sliding_window_t *window, void *data);
 // Retorna o primeiro item na janela no ponteiro data. Bloqueante caso esteja vazia.
 void sw_remove(sliding_window_t *window, void **data);
 
+// Retorna o primeiro item na janela no ponteiro data, mas sem remover ele. Bloqueante caso esteja vazia.
+void sw_peek(sliding_window_t *window, void **data);
+
 // Retorna 1 caso esteja cheia, 0 caso contrario.
 int sw_isFull(sliding_window_t *window);
 
@@ -36,6 +41,8 @@ int sw_isEmpty(sliding_window_t *window);
 
 void sw_free(sliding_window_t *window);
 
-void *cm_init(void *args);
+int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_message *errorResponse);
+
+int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *type);
 
 #endif  // CONNECTION_MANAGET_H

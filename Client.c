@@ -14,8 +14,9 @@
 #include "connectionManager.h"
 #include "message.h"
 #include "pilha.h"
-#include "slidingWindow.h"
 #include "tokenlizer.h"
+
+#define FILE_BUFFER_SIZE (64 * 1024)
 
 #ifndef NETINTERFACE
 #error NETINTERFACE não está definido. Use "make [interface de rede]"
@@ -90,7 +91,7 @@ int identifica_comando(char *argv[], int argc) {
             break;
 
         case CD:
-            comando = C_UNUSED;
+            comando = C_METAMESSAGE;
             break;
 
         default:
@@ -115,6 +116,19 @@ void libera_e_sai(int exitCode, void *freeHeap) {
     fprintf(stderr, "\t%s\n", strerror(errno));
 }
 
+int open_backup_file(FILE **curr_file, char *filename) {
+    struct stat about_file;
+
+    *curr_file = fopen(filename, "r");
+    if (*curr_file == NULL)
+        return errno;
+
+    if (fstat(fileno(*curr_file), &about_file))
+        return errno;
+
+    return 0;
+}
+
 int interpreta_comando(int comando) {
     switch (comando) {
         case C_BACKUP_1FILE:
@@ -133,111 +147,12 @@ int interpreta_comando(int comando) {
         case C_VERIFY:
             return ERRO;
 
-        case C_UNUSED:
+        case C_METAMESSAGE:
             return ERRO;
 
         default:
             return ERRO;
     }  // switch (comando)
-}
-
-int f_backup_file(t_message *messageT, FILE **curr_file, char *filename, unsigned char curr_seq) {
-    struct stat about_file;
-
-    *curr_file = fopen(filename, "r");
-    if (*curr_file == NULL)
-        return errno;
-
-    if (fstat(fileno(*curr_file), &about_file))
-        return errno;
-
-    messageT->length = strlen(filename) + sizeof((char)'\0');
-    messageT->sequence = curr_seq;
-    messageT->type = C_BACKUP_1FILE;
-    strcpy((char *)messageT->data, filename);
-
-    return 0;
-}
-
-int file_read(void *ptr, int max_bytes, FILE *file) {
-    static int bufferUsage = 0;
-    static unsigned char *buffer = NULL;
-    if (buffer == NULL) {
-        if (posix_memalign((void **)&buffer, 4096, 65536)) {
-            perror("Erro ao alocar buffer de escrita.\n");
-            exit(-1);
-        }
-    }
-
-    if (bufferUsage == 0) {
-        bufferUsage = fread(buffer, 65536, 1, file);
-    }
-
-    if (bufferUsage < max_bytes) {
-        memcpy(ptr, (buffer + 65536 - bufferUsage), bufferUsage);
-        bufferUsage -= bufferUsage;
-        return bufferUsage;
-    } else {
-        memcpy(ptr, (buffer + 65536 - bufferUsage), max_bytes);
-        bufferUsage -= max_bytes;
-        return max_bytes;
-    }
-}
-
-int mensagem_backup(t_message *messageT, FILE *curr_file, unsigned char curr_seq) {
-    if (feof(curr_file)) {
-        messageT->type = C_END_OF_FILE;
-        messageT->sequence = curr_seq;
-        messageT->length = 0;
-        return EXECUTANDO_BACKUP;
-    } else {
-        messageT->type = C_DATA;
-        messageT->sequence = curr_seq;
-        messageT->length = fread(messageT->data, 1, DATA_MAX_SIZE_BYTES, curr_file);
-        // messageT->length = file_read(messageT->data, DATA_MAX_SIZE_BYTES, curr_file);
-        return ENVIANDO_BACKUP_FILE;
-    }
-}
-
-void envia_e_espera(int socketFD, t_message *messageT, t_message *messageR, t_message *messageA) {
-    int bytes_sent;
-    int read_status;
-    int sendType = 0;
-    int isOk = 1;
-
-    do {
-        switch (sendType) {
-            case 0:  // Mensagem normal
-                bytes_sent = send_message(socketFD, messageT);
-                if (bytes_sent == -1) {
-                    fprintf(stderr, "ERRO NO WRITE MESSAGE\n");
-                    exit(-1);
-                }
-                break;
-
-            case 1:  // NACK
-                if (send_nack(socketFD, messageA, messageR) == -1) {
-                    fprintf(stderr, "ERRO NO WRITE MESSAGE\n");
-                    exit(-1);
-                }
-                break;
-        }
-
-        read_status = receive_message(socketFD, messageR);
-        if (read_status == RECVM_STATUS_PACKET_LOSS) {
-            sendType = 0;
-            isOk = 0;
-        } else if (read_status == RECVM_STATUS_PARITY_ERROR) {
-            sendType = 1;
-            isOk = 0;
-        } else if (read_status > 0) {
-            isOk = 1;
-        } else {  // Inclui read_status == RECVM_STATUS_ERROR
-            fprintf(stderr, "ERRO NO READ MESSAGE\n");
-            exit(-1);
-        }
-
-    } while (messageR->type == C_NACK || !(isOk));
 }
 
 int le_comando(int *argc, char *argv[], int *qnt_arquivos) {
@@ -268,23 +183,23 @@ int main(void) {
 
     int socket = ConexaoRawSocket(NETINTERFACE);
 
-    void *packets_buffer = malloc(3 * PACKET_SIZE_BYTES * sizeof(unsigned char));
+    void *packets_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
     empilhar(freeHeap, packets_buffer);
-    t_message *messageT = init_message(packets_buffer);                          // Você envia uma mensagem. (Pacote enviado)
-    t_message *messageR = init_message(packets_buffer + PACKET_SIZE_BYTES);      // Você recebe uma resposta. (Pacote recebido)
-    t_message *messageA = init_message(packets_buffer + 2 * PACKET_SIZE_BYTES);  // Usado apenas para enviar mensagens de NACK
-
-    pthread_t connectionManagerThread;
-    pthread_create(&connectionManagerThread, NULL, cm_init, (void *)window);
+    t_message *messageR = init_message(packets_buffer);  // Você recebe uma resposta. (Pacote recebido)
 
     int argc;
     char *argv[4096];
     FILE *curr_file = NULL;
+    unsigned char *file_buffer = malloc(FILE_BUFFER_SIZE * sizeof(unsigned char));
+    empilhar(freeHeap, file_buffer);
     int quantidade_arquivos = 0;
     int arquivos_enviados = 0;
-    unsigned char curr_seq = 0;
     int estado = PROMPT_DE_COMANDO;
     int comando;
+    char error = 0;
+
+    unsigned char type;
+    int bytes;
 
     for (;;) {
         switch (estado) {
@@ -318,41 +233,48 @@ int main(void) {
 
             // ==
             case EXECUTANDO_BACKUP:
+                estado = ERRO;
                 if (arquivos_enviados >= quantidade_arquivos) {
                     estado = PROMPT_DE_COMANDO;
                     continue;
                 }
-                curr_seq = NEXT_SEQUENCE(curr_seq);
-                if (f_backup_file(messageT, &curr_file, argv[arquivos_enviados + 1], curr_seq) == 0) {
-                    envia_e_espera(socket, messageT, messageR, messageA);
-                    if (messageR->type == C_OK) {
-                        estado = ENVIANDO_BACKUP_FILE;
-                    } else
-                        estado = ERRO;
-                } else
-                    estado = ERRO;
+                char *filename = argv[arquivos_enviados + 1];
+                if (open_backup_file(&curr_file, filename) == 0)
+                    if (cm_send_message(socket, filename, strlen(filename) + sizeof((char)'\0'), C_BACKUP_1FILE, messageR) != -1)
+                        if (cm_receive_message(socket, &error, 1, &type) != -1) {
+                            printf("%d e %d\n", type, type);
+                            if (type == C_OK)
+                                estado = ENVIANDO_BACKUP_FILE;
+                        }
                 arquivos_enviados += 1;
                 break;
 
             // ==
             case ENVIANDO_BACKUP_FILE:
-                curr_seq = NEXT_SEQUENCE(curr_seq);
-                estado = mensagem_backup(messageT, curr_file, curr_seq);
-                envia_e_espera(socket, messageT, messageR, messageA);
-                if (messageR->type == C_ACK) {
-                    // mantem o estado
-                } else if (messageR->type == C_OK) {  // Enviou todo o arquivo.
-                    estado = EXECUTANDO_BACKUP;
-                    fprintf(stdout, "\033[%dA\033[0K\r", quantidade_arquivos - arquivos_enviados + 1);
-                    fprintf(stdout, "  \"%s\" \033[0;32m(Enviado)", argv[arquivos_enviados]);
-                    fprintf(stdout, "\033[%dB\033[0K\r\033[0m", quantidade_arquivos - arquivos_enviados + 1);
-                    fflush(stdout);
-                } else {
+                estado = ERRO;
+                if (feof(curr_file)) {
+                    if (cm_send_message(socket, file_buffer, 0, C_END_OF_FILE, messageR) != -1)
+                        if (cm_receive_message(socket, &error, 1, &type) != -1)
+                            if (type == C_OK) {  // Enviou todo o arquivo.
+                                estado = EXECUTANDO_BACKUP;
+                                fprintf(stdout, "\033[%dA\033[0K\r", quantidade_arquivos - arquivos_enviados + 1);
+                                fprintf(stdout, "  \"%s\" \033[0;32m(Enviado)", argv[arquivos_enviados]);
+                                fprintf(stdout, "\033[%dB\033[0K\r\033[0m", quantidade_arquivos - arquivos_enviados + 1);
+                                fflush(stdout);
+                            }
+                    break;
+                }
+
+                bytes = fread(file_buffer, 1, FILE_BUFFER_SIZE, curr_file);
+                printf("pedaço: %d\n", bytes);
+                if (cm_send_message(socket, file_buffer, bytes, C_DATA, messageR) != -1)
+                    estado = ENVIANDO_BACKUP_FILE;
+
+                if (estado == ERRO) {
                     fprintf(stdout, "\033[%dA\033[0K\r", quantidade_arquivos - arquivos_enviados + 1);
                     fprintf(stdout, "  \"%s\" \033[1;31m(ERRO)", argv[arquivos_enviados]);
                     fprintf(stdout, "\033[%dB\033[0K\r\033[0m", quantidade_arquivos - arquivos_enviados + 1);
                     fflush(stdout);
-                    estado = ERRO;
                 }
                 break;
 
