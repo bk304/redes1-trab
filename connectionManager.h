@@ -26,10 +26,11 @@ typedef struct sliding_window_t {
 sliding_window_t *sw_create(int slots);
 
 // Insere um item na janela. Bloqueante caso esteja cheia.
-void sw_insert(sliding_window_t *window, sliding_window_node_t *slot);
+void sw_insert(sliding_window_t *window, sliding_window_node_t **slot) ;
 
 // Retorna o primeiro item na janela no ponteiro data. Bloqueante caso esteja vazia.
 void sw_remove(sliding_window_t *window);
+void sw_no_mutex_remove(sliding_window_t *window);
 
 // Retorna o primeiro item na janela no ponteiro data, mas sem remover ele. Bloqueante caso esteja vazia.
 void sw_peek(sliding_window_t *window, sliding_window_node_t **slot);

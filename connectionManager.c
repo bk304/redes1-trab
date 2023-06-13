@@ -13,7 +13,6 @@
 
 sliding_window_t *window = NULL;
 
-void sw_no_mutex_printSize(sliding_window_t *window);
 sliding_window_t *sw_create(int slots) {
     sliding_window_t *window = malloc(sizeof(sliding_window_t));
     window->capacity = slots;
@@ -48,27 +47,31 @@ sliding_window_t *sw_create(int slots) {
     return window;
 };
 
-void sw_insert(sliding_window_t *window, sliding_window_node_t *slot) {
+void lista_insere(sliding_window_node_t *p, sliding_window_node_t *lista){
+    p->prev = lista->prev;
+    p->next = lista->prev->next;
+
+    lista->prev->next = p;
+    lista->prev = p; 
+}
+
+void sw_insert(sliding_window_t *window, sliding_window_node_t **slot) {
     // Use getSlot para pegar uma vaga
     pthread_mutex_lock(&window->mutex);
 
-    slot->inUse = 1;
+    (*slot)->inUse = 1;
     sliding_window_node_t *p = window->slots;
     if(p == NULL){
-        slot->next = slot;
-        slot->prev = slot;
-        window->slots = slot;
+        (*slot)->next = *slot;
+        (*slot)->prev = *slot;
+        window->slots = *slot;
     } else {
-        p = p->prev;
-        slot->next = p->next;
-        slot->next->prev = slot;
-        slot->prev = p;
-        p->next = slot;
+        lista_insere(*slot, p);
     }
 
-    window->size += 1;
+    *slot = NULL;
 
-    sw_no_mutex_printSize(window);
+    window->size += 1;
 
     sem_post(&window->sem_item);  // Sinaliza que já um item na janela.
     pthread_mutex_unlock(&window->mutex);
@@ -80,20 +83,19 @@ void sw_remove(sliding_window_t *window) {
     pthread_mutex_lock(&window->mutex);
 
     sliding_window_node_t *p = window->slots;
-    if(p->next == p)
+    if(p->next == p){
         window->slots = NULL;
-    else
+    }
+    else{
+        window->slots->prev = p->next;
+        p->next->prev = window->slots->prev;
         window->slots = p->next;
+    }
 
     if(window->emptySlots == NULL)
         window->emptySlots = p;
     else{
-        sliding_window_node_t *lastSlot = window->emptySlots;
-        while (lastSlot->next != window->emptySlots) {
-            lastSlot = lastSlot->next;
-        }
-        p->next = lastSlot->next;
-        lastSlot->next = p;
+        lista_insere(p, window->emptySlots);  
     }
 
     p->inUse = 0;
@@ -105,7 +107,31 @@ void sw_remove(sliding_window_t *window) {
     return;
 }
 
-void sw_no_mutex_remove(sliding_window_t *window, void **data) {
+void sw_no_mutex_remove(sliding_window_t *window) {
+    sem_wait(&window->sem_item);  // Aguarda por um item
+
+    sliding_window_node_t *p = window->slots;
+    if(p->next == p){
+        window->slots = NULL;
+    }
+    else{
+        window->slots->prev = p->next;
+        p->next->prev = window->slots->prev;
+        window->slots = p->next;
+    }
+
+    if(window->emptySlots == NULL)
+        window->emptySlots = p;
+    else{
+        lista_insere(p, window->emptySlots);  
+    }
+
+    p->inUse = 0;
+
+    window->size -= 1;
+
+    sem_post(&window->sem_vaga);  // Libera uma vaga na janela.
+    return;
 }
 
 void sw_peek(sliding_window_t *window, sliding_window_node_t **slot) {
@@ -119,61 +145,12 @@ void sw_peek(sliding_window_t *window, sliding_window_node_t **slot) {
     return;
 }
 
-void sw_flush(sliding_window_tding_window_t *window) {
+void sw_flush(sliding_window_t *window) {
     int n = window->size;
-    void *_trash;
     while (n > 0) {
         sw_remove(window);
         n -= 1;
     }
-}
-
-void sw_printSize(sliding_window_t *window) {
-    pthread_mutex_lock(&window->mutex);
-    int i, v;
-    sem_getvalue(&window->sem_item, &i);
-    sem_getvalue(&window->sem_vaga, &v);
-    static int c = 0;
-    c++;
-    if (c < 6) {
-        pthread_mutex_unlock(&window->mutex);
-        return;
-    }
-
-    printf("Window > Size: %d  | sem_item: %d | sem_vaga: %d \n", window->size, i, v);
-
-    sliding_window_node_t *start = window->slots;
-    sliding_window_node_t *p = start->next;
-    printf("< %d ", (start->inUse == 1 ? start->data->sequence : -1));
-    while (p != start) {
-        printf("%d ", (p->inUse == 1 ? p->data->sequence : -1));
-        p = p->next;
-    }
-    printf(">\n");
-    pthread_mutex_unlock(&window->mutex);
-}
-
-void sw_no_mutex_printSize(sliding_window_t *window) {
-    int i, v;
-    sem_getvalue(&window->sem_item, &i);
-    sem_getvalue(&window->sem_vaga, &v);
-    static int c = 0;
-    c++;
-    if (c < 6) {
-        pthread_mutex_unlock(&window->mutex);
-        return;
-    }
-
-    printf("Window > Size: %d  | sem_item: %d | sem_vaga: %d \n", window->size, i, v);
-
-    sliding_window_node_t *start = window->slots;
-    sliding_window_node_t *p = start->next;
-    printf("< %d ", (start->inUse == 1 ? start->data->sequence : -1));
-    while (p != start) {
-        printf("%d ", (p->inUse == 1 ? p->data->sequence : -1));
-        p = p->next;
-    }
-    printf(">\n");
 }
 
 int sw_isFull(sliding_window_t *window) {
@@ -193,12 +170,20 @@ void sw_free(sliding_window_t *window) {
     free(window);
 }
 
-sliding_window_node_t *getSlot(sliding_window_t *window) {
+sliding_window_node_t *sw_getSlot(sliding_window_t *window) {
     sem_wait(&window->sem_vaga); // pega uma vaga
     
     sliding_window_node_t *p = window->emptySlots;
+    if(p->next == p){
+        window->emptySlots = NULL;
+    }
+    else{
+        p->next->prev = p->prev;
+        p->prev->next = p->next;
+    }
     
-    p->next =
+    p->next == NULL;
+    p->prev == NULL;
 
     return p;
 }
@@ -227,10 +212,11 @@ void *_senderAssistant(void *arg) {
     void *packets_buffer = malloc(2 * PACKET_SIZE_BYTES * sizeof(unsigned char));
     t_message *messageR = init_message(packets_buffer);
     t_message *messageNACK = init_message(packets_buffer + PACKET_SIZE_BYTES);
+    sliding_window_node_t *slot;
     int receiveStatus;
     int n;
     int seq;
-    void *data;
+    t_message *data;
 
     void *cleanup_arg[] = {packets_buffer, sem, threadCompleted};
     pthread_cleanup_push(_senderAssistant_cleanup, cleanup_arg);
@@ -267,21 +253,18 @@ void *_senderAssistant(void *arg) {
 
         // Remove os pacotes confirmados
         // Só lembrando que messageR sempre será ACK ou NACK
-        sw_peek(window, &data);
+        sw_peek(window, &slot);
+        data = slot->data;
         if (((ACK_NACK_CODE *)messageR)->code < ((t_message *)data)->sequence)
             seq = ((ACK_NACK_CODE *)messageR)->code + (SEQ_MAX + 1);
         else
             seq = ((ACK_NACK_CODE *)messageR)->code;
         n = seq + (messageR->type == C_ACK ? 1 : 0) - ((t_message *)data)->sequence;
-        printf("n:%d seq %d messageR %d dataseq %d", n, seq, ((ACK_NACK_CODE *)messageR)->code, ((t_message *)data)->sequence);
-        sw_printSize(window);
         pthread_mutex_lock(&window->mutex);
         while (n > 0) {
-            sw_no_mutex_remove(window, &data);
-            printf("~ %d Removido.\n", ((t_message *)data)->sequence);
+            sw_no_mutex_remove(window);
             n--;
         }
-        printf("Trava3\n");
 
         // Se (messageR.type == C_ACK){
         //     Faz Nada
@@ -330,6 +313,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
         qntOfPackets = 1;
     int currSeq = 0;
     t_message *messageT;
+    sliding_window_node_t *slot;
     pthread_t AssistantThread;
     char assistantExited = 0;
     sem_t sem;
@@ -339,20 +323,19 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
 
     void *args[] = {(void *)&socketFD, (void *)errorResponse, (void *)&sem, (void *)&threadCompleted};
     if (pthread_create(&AssistantThread, NULL, _senderAssistant, args) != 0) {
-        free(messages);
-        free(packets_buffer);
         return -1;
     }
 
     // Envia uma metamensagem
-    messageT = sw_findSlot(window);
+    slot = sw_getSlot(window);
+    messageT = slot->data;
     messageT->type = C_METAMESSAGE;
     messageT->sequence = currSeq;
     messageT->length = sizeof(char);
     messageT->data[0] = 2;
 
     currSeq = NEXT_SEQUENCE(currSeq);
-    sw_insert(window, messageT);
+    sw_insert(window, &slot);
     if (send_message(socketFD, messageT) == -1) {
         fprintf(stderr, "ERRO NO WRITE MESSAGE em cm_send_message\n");
         exit(-1);
@@ -361,7 +344,8 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     // Envia os segmentos
     for (int i = 0; i < qntOfPackets; i++) {
         // Produz um pacote de até DATA_MAX_SIZE_BYTES bytes
-        messageT = sw_findSlot(window);
+        slot = sw_getSlot(window);
+        messageT = slot->data;
         messageT->type = type;
         messageT->sequence = currSeq;
         sendLength = (yetToSend >= DATA_MAX_SIZE_BYTES ? DATA_MAX_SIZE_BYTES : yetToSend);
@@ -372,8 +356,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
         bytesSent += sendLength;
         yetToSend -= sendLength;
 
-        sw_printSize(window);
-        sw_insert(window, messageT);
+        sw_insert(window, &slot);
         if (send_message(socketFD, messageT) == -1) {
             fprintf(stderr, "ERRO NO WRITE MESSAGE em cm_send_message\n");
             exit(-1);
@@ -387,14 +370,15 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     }
 
     // Envia código de fim de mensagem
-    messageT = sw_findSlot(window);
+    slot = sw_getSlot(window);
+    messageT = slot->data;
     messageT->type = C_METAMESSAGE;
     messageT->sequence = currSeq;
     messageT->length = sizeof(char);
     messageT->data[0] = 0;
 
     currSeq = NEXT_SEQUENCE(currSeq);
-    sw_insert(window, messageT);
+    sw_insert(window, &slot);
     if (send_message(socketFD, messageT) == -1) {
         fprintf(stderr, "ERRO NO WRITE MESSAGE em cm_send_message\n");
         exit(-1);
@@ -443,14 +427,14 @@ void *_receiverAssistant(void *arg) {
     t_message *messageR;                                                                                   // Mensagem recebida
     t_message *messageT = init_message(packets_buffer);     // Usado pra enviar mensagens
     t_message *messageNACK = init_message(packets_buffer + PACKET_SIZE_BYTES);  // Usado pra enviar NACK em caso de erro de paridade
-
+    sliding_window_node_t *slot;
     int currSeq = 0;
     char wrongSequence = 0;
     int receiveStatus;
     *messageType = C_ERROR;
 
     // Recebe a metamensagem
-    messageR = sw_findSlot(window);
+    messageR = init_message(malloc(PACKET_SIZE_BYTES * sizeof(unsigned char)));
     receiveStatus = receive_message(socketFD, messageR);
     if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
         // Envia NACK
@@ -487,10 +471,12 @@ void *_receiverAssistant(void *arg) {
         fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
         exit(-1);
     }
+    free(messageR);
 
     // ==
     for (;;) {
-        messageR = sw_findSlot(window);
+        slot = sw_getSlot(window);
+        messageR = slot->data;
         receiveStatus = receive_message(socketFD, messageR);
         if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
             // Envia NACK
@@ -573,8 +559,7 @@ void *_receiverAssistant(void *arg) {
             exit(-1);
         }
 
-        sw_insert(window, messageR);
-        sw_printSize(window);
+        sw_insert(window, &slot);
         sem_post(sem);
     }
 
@@ -592,6 +577,7 @@ int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *type)
     t_message *messageR;
     pthread_t AssistantThread;
     sem_t sem;
+    sliding_window_node_t *slot;
     char threadComplete = 0;
     sem_init(&sem, 0, 0);
     // Esse semaforo trava essa thread quando a janela está vazia,
@@ -606,7 +592,8 @@ int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *type)
 
     sem_wait(&sem);
     for (;;) {
-        sw_peek(window, (void **)&messageR);
+        sw_peek(window, &slot);
+        messageR = slot->data;
         if ((bytesReceived + messageR->length) > len) {
             // Avisa o client de erro de buffer cheio
             pthread_cancel(AssistantThread);
@@ -627,7 +614,7 @@ int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *type)
         }
 
         mempcpy(buf, messageR->data, messageR->length);
-        sw_remove(window, (void **)&messageR);
+        sw_remove(window);
         sem_wait(&sem);
 
         if (threadComplete == 1 || pthread_tryjoin_np(AssistantThread, (void **)&_trash) != EBUSY) {
