@@ -25,9 +25,11 @@ sliding_window_t *sw_create(int slots) {
     for (int i = 0; i < (slots - 1); i++) {
         window->slots[i].next = window->slots + (i + 1);
         window->slots[i].inUse = 0;
+        window->slots[i].data = NULL;
     }
     window->slots[slots - 1].inUse = 0;
     window->slots[slots - 1].next = window->slots;
+    window->slots[slots - 1].data = NULL;
 
     return window;
 };
@@ -110,8 +112,37 @@ void sw_printSize(sliding_window_t *window) {
     int i, v;
     sem_getvalue(&window->sem_item, &i);
     sem_getvalue(&window->sem_vaga, &v);
+    static int c = 0;
+    c++;
+    if (c < 6) {
+        pthread_mutex_unlock(&window->mutex);
+        return;
+    }
+
     printf("Window > Size: %d  | sem_item: %d | sem_vaga: %d \n", window->size, i, v);
+
+    sliding_window_node_t *start = window->slots;
+    sliding_window_node_t *p = start->next;
+    printf("< %d ", (start->inUse == 1 ? start->data->sequence : -1));
+    while (p != start) {
+        printf("%d ", (p->inUse == 1 ? p->data->sequence : -1));
+        p = p->next;
+    }
+    printf(">\n");
     pthread_mutex_unlock(&window->mutex);
+}
+
+t_message *sw_findSlot(sliding_window_t *window, t_message **messages, int capacity) {
+    pthread_mutex_lock(&window->mutex);
+    t_message *data;
+    sw_peek(window, (void **)&data);
+    if (data == NULL)
+        data = messages[0];
+
+    t_message *slot = messages[(((data - messages[0]) / sizeof(t_message *)) + window->size) % capacity];
+
+    pthread_mutex_unlock(&window->mutex);
+    return slot;
 }
 
 int sw_isFull(sliding_window_t *window) {
@@ -200,11 +231,9 @@ void *_senderAssistant(void *arg) {
         else
             seq = ((ACK_NACK_CODE *)messageR)->code;
         n = seq + (messageR->type == C_ACK ? 1 : 0) - ((t_message *)data)->sequence;
-        printf("Trava1\n");
         printf("n:%d seq %d messageR %d dataseq %d", n, seq, ((ACK_NACK_CODE *)messageR)->code, ((t_message *)data)->sequence);
         sw_printSize(window);
         pthread_mutex_lock(&window->mutex);
-        printf("Trava2\n");
         while (n > 0) {
             sw_no_mutex_remove(window, &data);
             printf("~ %d Removido.\n", ((t_message *)data)->sequence);
@@ -294,7 +323,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     // Envia os segmentos
     for (int i = 0; i < qntOfPackets; i++) {
         // Produz um pacote de até DATA_MAX_SIZE_BYTES bytes
-        messageT = messages[currSeq % (window->capacity + 1)];
+        messageT = sw_findSlot(window, messages, (window->capacity + 1));
         messageT->type = type;
         messageT->sequence = currSeq;
         sendLength = (yetToSend >= DATA_MAX_SIZE_BYTES ? DATA_MAX_SIZE_BYTES : yetToSend);
@@ -320,7 +349,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     }
 
     // Envia código de fim de mensagem
-    messageT = messages[currSeq % (window->capacity + 1)];
+    messageT = sw_findSlot(window, messages, (window->capacity + 1));
     messageT->type = C_METAMESSAGE;
     messageT->sequence = currSeq;
     messageT->length = sizeof(char);
@@ -429,7 +458,7 @@ void *_receiverAssistant(void *arg) {
 
     // ==
     for (;;) {
-        messageR = messages[currSeq % (window->capacity + 1)];
+        messageR = sw_findSlot(window, messages, (window->capacity + 1));
         receiveStatus = receive_message(socketFD, messageR);
         if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
             // Envia NACK
@@ -513,6 +542,7 @@ void *_receiverAssistant(void *arg) {
         }
 
         sw_insert(window, messageR);
+        sw_printSize(window);
         sem_post(sem);
     }
 
