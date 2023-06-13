@@ -9,11 +9,13 @@
 typedef struct sliding_window_node_t {
     t_message *data;
     struct sliding_window_node_t *next;
+    struct sliding_window_node_t *prev;
     char inUse;
 } sliding_window_node_t;
 
 typedef struct sliding_window_t {
     sliding_window_node_t *slots;
+    sliding_window_node_t *emptySlots;
     int capacity;
     int size;
     pthread_mutex_t mutex;
@@ -24,14 +26,13 @@ typedef struct sliding_window_t {
 sliding_window_t *sw_create(int slots);
 
 // Insere um item na janela. Bloqueante caso esteja cheia.
-void sw_insert(sliding_window_t *window, void *data);
+void sw_insert(sliding_window_t *window, sliding_window_node_t *slot);
 
 // Retorna o primeiro item na janela no ponteiro data. Bloqueante caso esteja vazia.
-void sw_remove(sliding_window_t *window, void **data);
+void sw_remove(sliding_window_t *window);
 
 // Retorna o primeiro item na janela no ponteiro data, mas sem remover ele. Bloqueante caso esteja vazia.
-void sw_peek(sliding_window_t *window, void **data);
-
+void sw_peek(sliding_window_t *window, sliding_window_node_t **slot);
 // Retorna 1 caso esteja cheia, 0 caso contrario.
 int sw_isFull(sliding_window_t *window);
 
@@ -39,6 +40,8 @@ int sw_isFull(sliding_window_t *window);
 int sw_isEmpty(sliding_window_t *window);
 
 void sw_free(sliding_window_t *window);
+
+void sw_flush(sliding_window_t *window);
 
 int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_message *errorResponse);
 

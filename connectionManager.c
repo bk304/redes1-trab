@@ -14,39 +14,57 @@
 sliding_window_t *window = NULL;
 
 void sw_no_mutex_printSize(sliding_window_t *window);
-
 sliding_window_t *sw_create(int slots) {
     sliding_window_t *window = malloc(sizeof(sliding_window_t));
     window->capacity = slots;
     window->size = 0;
-    window->slots = malloc(slots * sizeof(sliding_window_node_t));
+    window->slots = NULL;
+    window->emptySlots = malloc(slots * sizeof(sliding_window_node_t));
     pthread_mutex_init(&window->mutex, NULL);
     sem_init(&window->sem_vaga, 0, slots);
     sem_init(&window->sem_item, 0, 0);
 
-    for (int i = 0; i < (slots - 1); i++) {
-        window->slots[i].next = window->slots + (i + 1);
-        window->slots[i].inUse = 0;
-        window->slots[i].data = NULL;
+    unsigned char *packets_buffer = malloc(slots * PACKET_SIZE_BYTES);
+    t_message **messages = malloc(slots * sizeof(t_message *));
+    for(int i=0; i<slots; i++){
+        messages[i] = init_message((i * PACKET_SIZE_BYTES) + packets_buffer);
     }
-    window->slots[slots - 1].inUse = 0;
-    window->slots[slots - 1].next = window->slots;
-    window->slots[slots - 1].data = NULL;
+    for (int i = 0; i < (slots - 1); i++) {
+        window->emptySlots[i].next = window->emptySlots + (i + 1);
+        window->emptySlots[i].inUse = 0;
+        window->emptySlots[i].data = messages[i];
+    }
+    window->emptySlots[slots - 1].inUse = 0;
+    window->emptySlots[slots - 1].next = window->emptySlots;
+    window->emptySlots[slots - 1].data = messages[slots - 1];
+
+    for(int i=slots-1; i> 0; i--){
+        window->emptySlots[i].prev = &(window->emptySlots[i-1]);
+    }
+    window->emptySlots[0].prev = &(window->emptySlots[slots - 1]);
+
+    free(messages);
 
     return window;
 };
 
-void sw_insert(sliding_window_t *window, void *data) {
-    sem_wait(&window->sem_vaga);  // Aguarda uma vaga
+void sw_insert(sliding_window_t *window, sliding_window_node_t *slot) {
+    // Use getSlot para pegar uma vaga
     pthread_mutex_lock(&window->mutex);
 
+    slot->inUse = 1;
     sliding_window_node_t *p = window->slots;
-    while (p->inUse == 1) {
-        p = p->next;
+    if(p == NULL){
+        slot->next = slot;
+        slot->prev = slot;
+        window->slots = slot;
+    } else {
+        p = p->prev;
+        slot->next = p->next;
+        slot->next->prev = slot;
+        slot->prev = p;
+        p->next = slot;
     }
-
-    p->inUse = 1;
-    p->data = data;
 
     window->size += 1;
 
@@ -57,18 +75,30 @@ void sw_insert(sliding_window_t *window, void *data) {
     return;
 }
 
-void sw_remove(sliding_window_t *window, void **data) {
+void sw_remove(sliding_window_t *window) {
     sem_wait(&window->sem_item);  // Aguarda por um item
     pthread_mutex_lock(&window->mutex);
 
     sliding_window_node_t *p = window->slots;
-    *data = p->data;
+    if(p->next == p)
+        window->slots = NULL;
+    else
+        window->slots = p->next;
+
+    if(window->emptySlots == NULL)
+        window->emptySlots = p;
+    else{
+        sliding_window_node_t *lastSlot = window->emptySlots;
+        while (lastSlot->next != window->emptySlots) {
+            lastSlot = lastSlot->next;
+        }
+        p->next = lastSlot->next;
+        lastSlot->next = p;
+    }
+
     p->inUse = 0;
-    window->slots = p->next;
 
     window->size -= 1;
-
-    sw_no_mutex_printSize(window);
 
     sem_post(&window->sem_vaga);  // Libera uma vaga na janela.
     pthread_mutex_unlock(&window->mutex);
@@ -76,40 +106,26 @@ void sw_remove(sliding_window_t *window, void **data) {
 }
 
 void sw_no_mutex_remove(sliding_window_t *window, void **data) {
-    sem_wait(&window->sem_item);  // Aguarda por um item
-
-    sliding_window_node_t *p = window->slots;
-    *data = p->data;
-    p->inUse = 0;
-    window->slots = p->next;
-
-    window->size -= 1;
-
-    sem_post(&window->sem_vaga);  // Libera uma vaga na janela.
-    return;
 }
 
-void sw_peek(sliding_window_t *window, void **data) {
+void sw_peek(sliding_window_t *window, sliding_window_node_t **slot) {
     sem_wait(&window->sem_item);  // Aguarda por um item
     pthread_mutex_lock(&window->mutex);
 
-    sliding_window_node_t *p = window->slots;
-    *data = p->data;
+    *slot = window->slots;
 
     sem_post(&window->sem_item);  // Devolve a contagem de item
     pthread_mutex_unlock(&window->mutex);
     return;
 }
 
-void sw_flush(sliding_window_t *window) {
-    pthread_mutex_lock(&window->mutex);
+void sw_flush(sliding_window_tding_window_t *window) {
     int n = window->size;
     void *_trash;
     while (n > 0) {
-        sw_no_mutex_remove(window, &_trash);
+        sw_remove(window);
         n -= 1;
     }
-    pthread_mutex_unlock(&window->mutex);
 }
 
 void sw_printSize(sliding_window_t *window) {
@@ -173,17 +189,18 @@ int sw_isEmpty(sliding_window_t *window) {
 }
 
 void sw_free(sliding_window_t *window) {
+    free(packetPtr_from_message(window->slots[0].data));
     free(window);
 }
 
-t_message *findSlot(t_message **messages, int capacity) {
-    static int i = 0;
+sliding_window_node_t *getSlot(sliding_window_t *window) {
+    sem_wait(&window->sem_vaga); // pega uma vaga
+    
+    sliding_window_node_t *p = window->emptySlots;
+    
+    p->next =
 
-    t_message *slot = messages[i % capacity];
-
-    i = (i + 1) % 66;
-
-    return slot;
+    return p;
 }
 
 void _senderAssistant_cleanup(void *arg) {
@@ -311,10 +328,6 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     int qntOfPackets = (len + DATA_MAX_SIZE_BYTES - 1) / DATA_MAX_SIZE_BYTES;
     if (qntOfPackets == 0)
         qntOfPackets = 1;
-    void *packets_buffer = malloc((window->capacity + 1) * PACKET_SIZE_BYTES * sizeof(unsigned char));
-    t_message **messages = malloc((window->capacity + 1) * sizeof(t_message *));
-    for (int i = 0; i < (window->capacity + 1); i++)
-        messages[i] = init_message(packets_buffer + (i * PACKET_SIZE_BYTES));
     int currSeq = 0;
     t_message *messageT;
     pthread_t AssistantThread;
@@ -332,7 +345,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     }
 
     // Envia uma metamensagem
-    messageT = messages[0];
+    messageT = sw_findSlot(window);
     messageT->type = C_METAMESSAGE;
     messageT->sequence = currSeq;
     messageT->length = sizeof(char);
@@ -348,7 +361,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     // Envia os segmentos
     for (int i = 0; i < qntOfPackets; i++) {
         // Produz um pacote de até DATA_MAX_SIZE_BYTES bytes
-        messageT = findSlot(messages, (window->capacity + 1));
+        messageT = sw_findSlot(window);
         messageT->type = type;
         messageT->sequence = currSeq;
         sendLength = (yetToSend >= DATA_MAX_SIZE_BYTES ? DATA_MAX_SIZE_BYTES : yetToSend);
@@ -374,7 +387,7 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     }
 
     // Envia código de fim de mensagem
-    messageT = findSlot(messages, (window->capacity + 1));
+    messageT = sw_findSlot(window);
     messageT->type = C_METAMESSAGE;
     messageT->sequence = currSeq;
     messageT->length = sizeof(char);
@@ -394,8 +407,6 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
     }
 
     sw_flush(window);
-    free(packets_buffer);
-    free(messages);
 
 #ifdef DEBUG
     printf("SENDING DONE.\n");
@@ -406,10 +417,9 @@ int cm_send_message(int socketFD, const void *buf, size_t len, int type, t_messa
 
 void _receiverAssistant_cleanup(void *arg) {
     free(((void **)arg)[0]);
-    free(((void **)arg)[1]);
     int val;
-    sem_t *sem = (sem_t *)((void **)arg)[2];
-    char *threadComplete = (char *)((void **)arg)[3];
+    sem_t *sem = (sem_t *)((void **)arg)[1];
+    char *threadComplete = (char *)((void **)arg)[2];
     *threadComplete = 1;
     sem_getvalue(sem, &val);
     val += window->capacity;
@@ -425,17 +435,14 @@ void *_receiverAssistant(void *arg) {
     sem_t *sem = (sem_t *)((void **)arg)[1];
     char *threadComplete = (char *)((void **)arg)[2];
     unsigned char *messageType = (unsigned char *)((void **)arg)[3];
-    void *packets_buffer = malloc((window->capacity + 3) * PACKET_SIZE_BYTES * sizeof(unsigned char));
-    t_message **messages = malloc((window->capacity + 1) * sizeof(t_message *));
+    void *packets_buffer = malloc(2 * PACKET_SIZE_BYTES * sizeof(unsigned char));
 
-    void *cleanup_arg[] = {packets_buffer, messages, sem, threadComplete};
+    void *cleanup_arg[] = {packets_buffer, sem, threadComplete};
     pthread_cleanup_push(_receiverAssistant_cleanup, cleanup_arg);
 
-    for (int i = 0; i < (window->capacity + 1); i++)
-        messages[i] = init_message(packets_buffer + (i * PACKET_SIZE_BYTES));
     t_message *messageR;                                                                                   // Mensagem recebida
-    t_message *messageT = init_message(packets_buffer + ((window->capacity + 1) * PACKET_SIZE_BYTES));     // Usado pra enviar mensagens
-    t_message *messageNACK = init_message(packets_buffer + ((window->capacity + 2) * PACKET_SIZE_BYTES));  // Usado pra enviar NACK em caso de erro de paridade
+    t_message *messageT = init_message(packets_buffer);     // Usado pra enviar mensagens
+    t_message *messageNACK = init_message(packets_buffer + PACKET_SIZE_BYTES);  // Usado pra enviar NACK em caso de erro de paridade
 
     int currSeq = 0;
     char wrongSequence = 0;
@@ -443,7 +450,7 @@ void *_receiverAssistant(void *arg) {
     *messageType = C_ERROR;
 
     // Recebe a metamensagem
-    messageR = messages[0];
+    messageR = sw_findSlot(window);
     receiveStatus = receive_message(socketFD, messageR);
     if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
         // Envia NACK
@@ -483,7 +490,7 @@ void *_receiverAssistant(void *arg) {
 
     // ==
     for (;;) {
-        messageR = findSlot(messages, (window->capacity + 1));
+        messageR = sw_findSlot(window);
         receiveStatus = receive_message(socketFD, messageR);
         if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
             // Envia NACK
