@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "ConexaoRawSocket.h"
+#include "connectionManager.h"
 #include "message.h"
 #include "pilha.h"
 
@@ -17,6 +18,8 @@
 // define só para o editor de texto saber que é um macro.
 #define NETINTERFACE "lo"
 #endif
+
+#define FILE_BUFFER_SIZE (64 * 1024)
 
 enum estados {
     ESPERANDO_COMANDO,
@@ -38,34 +41,6 @@ void libera_e_sai(__attribute__((unused)) int exitCode, void *freeHeap) {
     printf("%s\n", strerror(errno));
 }
 
-void envia_e_espera(int socketFD, t_message *messageT, t_message *messageR, t_message *messageA) {
-    int bytes_sent;
-    int bytes_received;
-    int parityError = 0;
-
-    do {
-        if (!parityError) {
-            bytes_sent = send_message(socketFD, messageT);
-            if (bytes_sent == -1) {
-                printf("ERRO NO WRITE\n");
-                exit(-1);
-            }
-        } else {
-            if (send_nack(socketFD, messageA) == -1) {
-                printf("ERRO NO WRITE\n");
-                exit(-1);
-            }
-        }
-
-        bytes_received = receive_message(socketFD, messageR);
-        if (bytes_received == -1) {
-            printf("ERRO NO READ\n");
-            exit(-1);
-        }
-        parityError = (bytes_received == -2);
-    } while (messageR->type == C_NACK || parityError);
-}
-
 int main(void) {
     type_pilha *freeHeap = criar_pilha(sizeof(void *));
     on_exit(libera_e_sai, freeHeap);
@@ -74,55 +49,54 @@ int main(void) {
 
     int socket = ConexaoRawSocket(NETINTERFACE);
 
-    void *packets_buffer = malloc(3 * PACKET_SIZE_BYTES * sizeof(unsigned char));
+    void *packets_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
     empilhar(freeHeap, packets_buffer);
-    t_message *messageT = init_message(packets_buffer);                          // Você envia uma mensagem. (Pacote enviado)
-    t_message *messageR = init_message(packets_buffer + PACKET_SIZE_BYTES);      // Você recebe uma resposta. (Pacote recebido)
-    t_message *messageA = init_message(packets_buffer + 2 * PACKET_SIZE_BYTES);  // Usado apenas para enviar mensagens de ACK e NACK
+    t_message *messageR = init_message(packets_buffer);  // Você recebe uma resposta. (Pacote recebido)
 
-    int bytes_written = 0;
-    int read_status = 0;
     int estado = ESPERANDO_COMANDO;
     FILE *curr_file = NULL;
-    unsigned char curr_seq = 0;
+    unsigned char *file_buffer = malloc(FILE_BUFFER_SIZE * sizeof(unsigned char));
+    empilhar(freeHeap, file_buffer);
+
+    char error = 0;
+
+    unsigned char typeR;
+    unsigned char typeT;
+    int bytesR;
+    int bytesT;
 
     printf("Lendo socket...\n");
     // Primeira mensagem.
-    read_status = receive_message(socket, messageR);
-    if (read_status == -1) {
-        printf("ERRO NO READ");
+    if ((bytesR = cm_receive_message(socket, file_buffer, FILE_BUFFER_SIZE, &typeR)) == -1)
         exit(-1);
-    } else if (read_status == -2) {
-        if (send_nack(socket, messageA) == -1)
-            exit(-1);
-    }
 
-    for (char breakLoop = 0; !breakLoop;) {
+    printf("Type: %d\n", typeR);
+
+    for (;;) {
         switch (estado) {
             // ==
             case ESPERANDO_COMANDO:
-                curr_seq = 0;
-                switch (messageR->type) {
+                switch (typeR) {
                     case C_BACKUP_1FILE:
-                        printf("Iniciando backup do arquivo \"%s\".\n", messageR->data);
-                        curr_file = fopen((char *)messageR->data, "w+");
-
+                        printf("Iniciando backup do arquivo \"%s\".\n", file_buffer);
+                        curr_file = fopen((char *)file_buffer, "w+");
                         if (curr_file == NULL) {
                             estado = ERRO;
-                            messageT->type = C_ERROR;
+                            typeT = C_ERROR;
+                            bytesT = 1;
                             if (errno == EACCES)
-                                messageT->data[0] = NO_WRITE_PERMISSION;
+                                ((messageError *)file_buffer)->errorCode = NO_WRITE_PERMISSION;
                             else if (errno == EDQUOT)
-                                messageT->data[0] = DISK_FULL;
+                                ((messageError *)file_buffer)->errorCode = DISK_FULL;
                             else
-                                messageT->data[0] = UNKNOW_ERROR;
+                                ((messageError *)file_buffer)->errorCode = UNKNOW_ERROR;
                         } else {
                             estado = RECEBENDO_BACKUP_FILE;
-                            messageT->type = C_OK;
+                            typeT = C_OK;
+                            bytesT = 0;
                         }
-
-                        messageT->length = 0;
-                        messageT->sequence = 0;
+                        if (cm_send_message(socket, file_buffer, bytesT, typeT, messageR) == -1)
+                            exit(-1);
                         break;
 
                     case C_BACKUP_GROUP:
@@ -140,30 +114,25 @@ int main(void) {
 
             // ==
             case RECEBENDO_BACKUP_FILE:
-                switch (messageR->type) {
+                switch (typeR) {
                     case C_DATA:
-                        fwrite(messageR->data, 1, messageR->length, curr_file);
-                        messageT->type = C_ACK;
-                        messageT->length = 0;
-                        messageT->sequence = messageR->sequence;
+                        fwrite(file_buffer, 1, FILE_BUFFER_SIZE, curr_file);
+                        estado = RECEBENDO_BACKUP_FILE;
                         break;
                     case C_END_OF_FILE:
                         fclose(curr_file);
-                        messageT->type = C_OK;
-                        messageT->length = 0;
-                        messageT->sequence = messageR->sequence;
                         printf("Backup Concluido.\n");
                         estado = ESPERANDO_COMANDO;
                         break;
                     default:
                         estado = ERRO;
                         break;
-                }       // switch (messageT->type)
+                }       // switch (typeR)
                 break;  // case RECEBENDO_BACKUP_FILE
 
             // ==
             case RECEBENDO_BACKUP_GROUP:
-                switch (messageT->type) {
+                switch (typeR) {
                     case C_FILE_NAME:
                         break;
                     case C_DATA:
@@ -174,24 +143,24 @@ int main(void) {
                         break;
                     default:
                         break;
-                }       // switch (messageT->type)
+                }       // switch (typeR)
                 break;  // case RECEBENDO_BACKUP_GROUP
 
             // ==
             case ENVIANDO_REC_FILE:
-                switch (messageT->type) {
+                switch (typeR) {
                     case C_ACK:
                         break;
                     case C_NACK:
                         break;
                     default:
                         break;
-                }       // switch (messageT->type)
+                }       // switch (typeR)
                 break;  // case ENVIANDO_REC_FILE
 
             // ==
             case ENVIANDO_REC_GROUP:
-                switch (messageT->type) {
+                switch (typeR) {
                     case C_ERROR:
                         break;
                     case C_OK:
@@ -202,7 +171,7 @@ int main(void) {
                         break;
                     default:
                         break;
-                }       // switch (messageT->type)
+                }       // switch (typeR)
                 break;  // case ENVIANDO_REC_GROUP
 
             // ==
@@ -217,7 +186,8 @@ int main(void) {
                 continue;
         }  // switch (estado)
 
-        envia_e_espera(socket, messageT, messageR, messageA);
+        if ((bytesR = cm_receive_message(socket, file_buffer, FILE_BUFFER_SIZE, &typeR)) == -1)
+            exit(-1);
 
     }  // for (;;)
 

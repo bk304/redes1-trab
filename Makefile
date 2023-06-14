@@ -4,21 +4,27 @@ all: client server
 
 WARNING = -Wall -Wextra -Wno-packed-bitfield-compat
 
-CFLAGS =
+LFLAGS = -pthread -g
+CFLAGS =-g
 
 # Alvo "debug"
 ifeq ($(filter debug,$(MAKECMDGOALS)),debug)
 CFLAGS += -DDEBUG
 endif
 
+# Alvo "showDeleted"
+ifeq ($(filter showDeleted,$(MAKECMDGOALS)),showDeleted)
+CFLAGS += -DSHOWDELETED="TRUE"
+endif
+
 RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS)) \
 	$(eval $(RUN_ARGS):;@:)
 
-client: Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o
-	gcc $(CFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o $(WARNING)
+client: Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o
+	gcc $(CFLAGS) $(LFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o $(WARNING)
 
-server: Server.c ConexaoRawSocket.o message.o pilha.o
-	gcc $(CFLAGS) -o server Server.c ConexaoRawSocket.o message.o pilha.o $(WARNING)
+server: Server.c ConexaoRawSocket.o message.o pilha.o connectionManager.o
+	gcc $(CFLAGS) $(LFLAGS) -o server Server.c ConexaoRawSocket.o message.o pilha.o connectionManager.o $(WARNING)
 
 ConexaoRawSocket.o: ConexaoRawSocket.c ConexaoRawSocket.h
 	gcc $(CFLAGS) -o ConexaoRawSocket.o -c ConexaoRawSocket.c $(WARNING)
@@ -32,7 +38,10 @@ pilha.o: pilha.c pilha.h
 tokenlizer.o: tokenlizer.c tokenlizer.h
 	gcc $(CFLAGS) -o tokenlizer.o -c tokenlizer.c $(WARNING)
 
-lo: CFLAGS += -DNETINTERFACE=\"lo\" 
+connectionManager.o: connectionManager.c connectionManager.h message.h
+	gcc $(CFLAGS) -o connectionManager.o -c connectionManager.c $(WARNING)
+
+lo: CFLAGS += -DNETINTERFACE=\"lo\" -DLO
 lo: client server
 
 clean:
