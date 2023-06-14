@@ -14,6 +14,7 @@
 sliding_window_t *window = NULL;
 
 sliding_window_t *sw_create(int slots) {
+    sliding_window_node_t *p;
     sliding_window_t *window = malloc(sizeof(sliding_window_t));
     window->capacity = slots;
     window->size = 0;
@@ -23,24 +24,19 @@ sliding_window_t *sw_create(int slots) {
     sem_init(&window->sem_vaga, 0, slots);
     sem_init(&window->sem_item, 0, 0);
 
-    unsigned char *packets_buffer = malloc(slots * PACKET_SIZE_BYTES);
+    unsigned char *packets_buffer = malloc(slots * PACKET_SIZE_BYTES * sizeof(unsigned char));
+    window->packetPointer = packets_buffer;
     t_message **messages = malloc(slots * sizeof(t_message *));
     for(int i=0; i<slots; i++){
         messages[i] = init_message((i * PACKET_SIZE_BYTES) + packets_buffer);
     }
-    for (int i = 0; i < (slots - 1); i++) {
-        window->emptySlots[i].next = window->emptySlots + (i + 1);
+
+    for (int i = 0; i < slots; i++) {
         window->emptySlots[i].inUse = 0;
         window->emptySlots[i].data = messages[i];
+        p = &(window->emptySlots[i]);
+        sw_insert(window, &p);
     }
-    window->emptySlots[slots - 1].inUse = 0;
-    window->emptySlots[slots - 1].next = window->emptySlots;
-    window->emptySlots[slots - 1].data = messages[slots - 1];
-
-    for(int i=slots-1; i> 0; i--){
-        window->emptySlots[i].prev = &(window->emptySlots[i-1]);
-    }
-    window->emptySlots[0].prev = &(window->emptySlots[slots - 1]);
 
     free(messages);
 
@@ -57,6 +53,7 @@ void lista_insere(sliding_window_node_t *p, sliding_window_node_t *lista){
 
 void sw_insert(sliding_window_t *window, sliding_window_node_t **slot) {
     // Use getSlot para pegar uma vaga
+    // Espera-se que o slot já não está na fila EmptySlots
     pthread_mutex_lock(&window->mutex);
 
     (*slot)->inUse = 1;
@@ -70,7 +67,6 @@ void sw_insert(sliding_window_t *window, sliding_window_node_t **slot) {
     }
 
     *slot = NULL;
-
     window->size += 1;
 
     sem_post(&window->sem_item);  // Sinaliza que já um item na janela.
@@ -87,10 +83,12 @@ void sw_remove(sliding_window_t *window) {
         window->slots = NULL;
     }
     else{
-        window->slots->prev = p->next;
-        p->next->prev = window->slots->prev;
+        p->prev->next = p->next;
+        p->next->prev = p->prev;
         window->slots = p->next;
     }
+    p->next = p;
+    p->prev = p;
 
     if(window->emptySlots == NULL)
         window->emptySlots = p;
@@ -115,10 +113,12 @@ void sw_no_mutex_remove(sliding_window_t *window) {
         window->slots = NULL;
     }
     else{
-        window->slots->prev = p->next;
-        p->next->prev = window->slots->prev;
+        p->prev->next = p->next;
+        p->next->prev = p->prev;
         window->slots = p->next;
     }
+    p->next = p;
+    p->prev = p;
 
     if(window->emptySlots == NULL)
         window->emptySlots = p;
@@ -166,7 +166,7 @@ int sw_isEmpty(sliding_window_t *window) {
 }
 
 void sw_free(sliding_window_t *window) {
-    free(packetPtr_from_message(window->slots[0].data));
+    free(window->packetPointer);
     free(window);
 }
 
@@ -182,8 +182,8 @@ sliding_window_node_t *sw_getSlot(sliding_window_t *window) {
         p->prev->next = p->next;
     }
     
-    p->next == NULL;
-    p->prev == NULL;
+    p->next == p;
+    p->prev == p;
 
     return p;
 }

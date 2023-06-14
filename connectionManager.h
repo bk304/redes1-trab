@@ -16,6 +16,7 @@ typedef struct sliding_window_node_t {
 typedef struct sliding_window_t {
     sliding_window_node_t *slots;
     sliding_window_node_t *emptySlots;
+    void *packetPointer; // Usado pra desalocar todas as mensagens
     int capacity;
     int size;
     pthread_mutex_t mutex;
