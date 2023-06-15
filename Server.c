@@ -19,7 +19,7 @@
 #define NETINTERFACE "lo"
 #endif
 
-#define FILE_BUFFER_SIZE (64 * 1024)
+#define FILE_BUFFER_SIZE (64 * 1024 * 1024)
 
 enum estados {
     ESPERANDO_COMANDO,
@@ -57,6 +57,10 @@ int main(void) {
     FILE *curr_file = NULL;
     unsigned char *file_buffer = malloc(FILE_BUFFER_SIZE * sizeof(unsigned char));
     empilhar(freeHeap, file_buffer);
+    if (file_buffer == NULL) {
+        printf("Falha ao alocar buffer de arquivo.\n");
+        exit(-1);
+    }
 
     char error = 0;
 
@@ -116,11 +120,13 @@ int main(void) {
             case RECEBENDO_BACKUP_FILE:
                 switch (typeR) {
                     case C_DATA:
-                        fwrite(file_buffer, 1, FILE_BUFFER_SIZE, curr_file);
+                        fwrite(file_buffer, 1, bytesR, curr_file);
                         estado = RECEBENDO_BACKUP_FILE;
                         break;
                     case C_END_OF_FILE:
                         fclose(curr_file);
+                        if (cm_send_message(socket, file_buffer, 0, C_OK, messageR) == -1)
+                            exit(-1);
                         printf("Backup Concluido.\n");
                         estado = ESPERANDO_COMANDO;
                         break;

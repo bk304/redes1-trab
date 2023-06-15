@@ -16,7 +16,7 @@
 #include "pilha.h"
 #include "tokenlizer.h"
 
-#define FILE_BUFFER_SIZE (64 * 1024)
+#define FILE_BUFFER_SIZE (2 * 64 * 1024 * 1024)
 
 #ifndef NETINTERFACE
 #error NETINTERFACE não está definido. Use "make [interface de rede]"
@@ -192,6 +192,10 @@ int main(void) {
     FILE *curr_file = NULL;
     unsigned char *file_buffer = malloc(FILE_BUFFER_SIZE * sizeof(unsigned char));
     empilhar(freeHeap, file_buffer);
+    if (file_buffer == NULL) {
+        printf("Falha ao alocar buffer de arquivo.\n");
+        exit(-1);
+    }
     int quantidade_arquivos = 0;
     int arquivos_enviados = 0;
     int estado = PROMPT_DE_COMANDO;
@@ -241,11 +245,10 @@ int main(void) {
                 char *filename = argv[arquivos_enviados + 1];
                 if (open_backup_file(&curr_file, filename) == 0)
                     if (cm_send_message(socket, filename, strlen(filename) + sizeof((char)'\0'), C_BACKUP_1FILE, messageR) != -1)
-                        if (cm_receive_message(socket, &error, 1, &type) != -1) {
-                            printf("%d e %d\n", type, type);
+                        if (cm_receive_message(socket, &error, 1, &type) != -1)
                             if (type == C_OK)
                                 estado = ENVIANDO_BACKUP_FILE;
-                        }
+
                 arquivos_enviados += 1;
                 break;
 
@@ -256,7 +259,8 @@ int main(void) {
                     if (cm_send_message(socket, file_buffer, 0, C_END_OF_FILE, messageR) != -1)
                         if (cm_receive_message(socket, &error, 1, &type) != -1)
                             if (type == C_OK) {  // Enviou todo o arquivo.
-                                estado = EXECUTANDO_BACKUP;
+                                // estado = EXECUTANDO_BACKUP;
+                                estado = EXIT;
                                 fprintf(stdout, "\033[%dA\033[0K\r", quantidade_arquivos - arquivos_enviados + 1);
                                 fprintf(stdout, "  \"%s\" \033[0;32m(Enviado)", argv[arquivos_enviados]);
                                 fprintf(stdout, "\033[%dB\033[0K\r\033[0m", quantidade_arquivos - arquivos_enviados + 1);
@@ -266,7 +270,6 @@ int main(void) {
                 }
 
                 bytes = fread(file_buffer, 1, FILE_BUFFER_SIZE, curr_file);
-                printf("pedaço: %d\n", bytes);
                 if (cm_send_message(socket, file_buffer, bytes, C_DATA, messageR) != -1)
                     estado = ENVIANDO_BACKUP_FILE;
 
