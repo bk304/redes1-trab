@@ -74,8 +74,6 @@ int main(void) {
     if ((bytesR = cm_receive_message(socket, file_buffer, FILE_BUFFER_SIZE, &typeR)) == -1)
         exit(-1);
 
-    printf("Type: %d\n", typeR);
-
     for (;;) {
         switch (estado) {
             // ==

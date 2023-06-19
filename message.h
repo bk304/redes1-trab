@@ -13,7 +13,7 @@
 #define DATA_MAX_SIZE_BYTES 63                 // 504 bits. 63 bytes.
 #define PARITY_BITFIELD_SIZE 8                 // 8 bits.
 
-#define NEXT_SEQUENCE(seq) ((seq + 1) % 64)
+#define NEXT_SEQUENCE(seq) ((seq + 1) % (SEQ_MAX + 1))
 
 typedef struct t_message {
     unsigned char start_frame_delimiter;
@@ -67,6 +67,7 @@ typedef struct messageError {
         unsigned char length : LENGTH_BITFIELD_SIZE;
     };
     unsigned char errorCode;
+    int extraInfo;
 } messageError;
 
 #define DISK_FULL 0
@@ -98,5 +99,7 @@ void printMessage(t_message *message);
 void prinfhexMessage(t_message *message);
 
 void *packetPtr_from_message(t_message *message);
+
+void flush_recv_queue(int socket);
 
 #endif  // __MESSAGE_H__

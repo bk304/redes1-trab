@@ -16,7 +16,7 @@
 #include "pilha.h"
 #include "tokenlizer.h"
 
-#define FILE_BUFFER_SIZE (2 * 64 * 1024 * 1024)
+#define FILE_BUFFER_SIZE (64 * 1024 * 1024)
 
 #ifndef NETINTERFACE
 #error NETINTERFACE não está definido. Use "make [interface de rede]"
@@ -270,8 +270,23 @@ int main(void) {
                 }
 
                 bytes = fread(file_buffer, 1, FILE_BUFFER_SIZE, curr_file);
-                if (cm_send_message(socket, file_buffer, bytes, C_DATA, messageR) != -1)
-                    estado = ENVIANDO_BACKUP_FILE;
+                int offset = 0;
+                for (;;) {
+                    if (cm_send_message(socket, file_buffer + offset, bytes, C_DATA, messageR) != -1) {
+                        estado = ENVIANDO_BACKUP_FILE;
+                        break;
+                    } else {
+                        messageError *messageErr = (messageError *)messageR;
+                        if (messageErr->type == C_ERROR && messageErr->errorCode == BUFFER_FULL) {
+                            offset += messageErr->extraInfo;
+                            bytes -= messageErr->extraInfo;
+                        } else {
+                            printf("type: %d e extra: %d\n", messageErr->type, messageErr->errorCode);
+                            estado = ERRO;
+                            break;
+                        }
+                    }
+                }
 
                 if (estado == ERRO) {
                     fprintf(stdout, "\033[%dA\033[0K\r", quantidade_arquivos - arquivos_enviados + 1);

@@ -1,6 +1,7 @@
 #include "message.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,10 +26,12 @@ void *packetPtr_from_message(t_message *message) {
 }
 
 t_message *init_message(void *packet_buffer) {
+#ifdef DEBUG
     if (message_mutex == NULL) {
         message_mutex = malloc(sizeof(pthread_mutex_t));
         pthread_mutex_init(message_mutex, NULL);
     }
+#endif
     if (selfIdentifier == 0)
         selfIdentifier = (unsigned char)time(NULL);
     t_ethernet_frame *ethernet_packet = (t_ethernet_frame *)packet_buffer;
@@ -86,7 +89,9 @@ int send_message(int socket, t_message *message) {
     message->parity = message_parity(message);
     t_ethernet_frame *ethernet_packet = packetPtr_from_message(message);
     ethernet_packet->mac_source[0] = selfIdentifier;
-#ifdef DEBUG
+#ifdef DEBUG1
+    int old_state;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
     pthread_mutex_lock(message_mutex);
     printf("\033[0;32m");
     printf("Enviando ");
@@ -95,6 +100,7 @@ int send_message(int socket, t_message *message) {
     printf("\033[0m");
     printf("\n");
     pthread_mutex_unlock(message_mutex);
+    pthread_setcancelstate(old_state, &old_state);
 #endif
     return send(socket, packetPtr_from_message(message), PACKET_SIZE_BYTES, 0);
 }
@@ -137,6 +143,8 @@ int receive_message(int socket, t_message *message) {
 #ifdef LO
         if (message->parity == lastParity && message->sequence == lastSeq) {
 #ifdef SHOWDELETED
+            int old_state;
+            pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
             pthread_mutex_lock(message_mutex);
             printf("\033[1;31m");
             printf("MENSAGEM BLOQUEADA ");
@@ -145,6 +153,7 @@ int receive_message(int socket, t_message *message) {
             printf("\033[0m");
             printf("\n");
             pthread_mutex_unlock(message_mutex);
+            pthread_setcancelstate(old_state, &old_state);
 #endif
             continue;
         }
@@ -154,6 +163,8 @@ int receive_message(int socket, t_message *message) {
     }
 
 #ifdef DEBUG
+    int old_state;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
     pthread_mutex_lock(message_mutex);
     printf("\033[1;33m");
     printf("Recebido ");
@@ -162,6 +173,7 @@ int receive_message(int socket, t_message *message) {
     printf("\033[0m");
     printf("\n");
     pthread_mutex_unlock(message_mutex);
+    pthread_setcancelstate(old_state, &old_state);
 #endif
 
 #ifdef LO
@@ -201,4 +213,35 @@ void prinfhexMessage(t_message *message) {
         printf("%02X ", ((unsigned char *)message)[i]);
     }
     printf(" <\n");
+}
+
+void flush_recv_queue(int socket) {
+    int save = errno;
+    unsigned char *trash = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
+    t_message *messageR = init_message(trash);
+#ifdef DEBUG
+    int old_state;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
+    pthread_mutex_lock(message_mutex);
+    printf("Dando flush\n");
+    pthread_mutex_unlock(message_mutex);
+#endif
+    for (;;) {
+        if (!(recv(socket, trash, PACKET_SIZE_BYTES, MSG_DONTWAIT | MSG_PEEK) > 0))
+            break;
+
+        if (messageR->type == C_METAMESSAGE && messageR->data[0] > 1)
+            break;
+
+        recv(socket, trash, PACKET_SIZE_BYTES, MSG_DONTWAIT);
+    }
+#ifdef DEBUG
+    pthread_mutex_lock(message_mutex);
+    printf("Pronto. Flush feito.\n");
+    pthread_mutex_unlock(message_mutex);
+    pthread_setcancelstate(old_state, &old_state);
+#endif
+
+    free(trash);
+    errno = save;
 }
