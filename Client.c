@@ -16,7 +16,7 @@
 #include "pilha.h"
 #include "tokenlizer.h"
 
-#define FILE_BUFFER_SIZE (64 * 1024 * 1024)
+#define FILE_BUFFER_SIZE (2 * 64 * 1024 * 1024)
 
 #ifndef NETINTERFACE
 #error NETINTERFACE não está definido. Use "make [interface de rede]"

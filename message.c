@@ -89,7 +89,7 @@ int send_message(int socket, t_message *message) {
     message->parity = message_parity(message);
     t_ethernet_frame *ethernet_packet = packetPtr_from_message(message);
     ethernet_packet->mac_source[0] = selfIdentifier;
-#ifdef DEBUG1
+#ifdef DEBUG
     int old_state;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
     pthread_mutex_lock(message_mutex);
@@ -119,7 +119,19 @@ int receive_message(int socket, t_message *message) {
 
     for (;;) {
         read_status = recv(socket, packet, PACKET_SIZE_BYTES, MSG_TRUNC);
-
+#ifdef DEBUG
+        int old_state;
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
+        pthread_mutex_lock(message_mutex);
+        printf("\033[1;31m");
+        printf("MENSAGEM RECEBIDA ");
+        printMessage(message);
+        prinfhexMessage(message);
+        printf("\033[0m");
+        printf("\n");
+        pthread_mutex_unlock(message_mutex);
+        pthread_setcancelstate(old_state, &old_state);
+#endif
         if (read_status == -1) {
             return RECVM_STATUS_ERROR;
         }

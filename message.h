@@ -14,6 +14,7 @@
 #define PARITY_BITFIELD_SIZE 8                 // 8 bits.
 
 #define NEXT_SEQUENCE(seq) ((seq + 1) % (SEQ_MAX + 1))
+#define PREV_SEQUENCE(seq) ((seq + 63) % (SEQ_MAX + 1))
 
 typedef struct t_message {
     unsigned char start_frame_delimiter;
