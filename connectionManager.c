@@ -379,7 +379,6 @@ int cm_send_message(int socketFD, void *buf, size_t len, int type, t_message *er
 }
 
 void _receiverAssistant_cleanup(void *arg) {
-    printf("=====================\nASSISTENTE MORRENDO\n======================\n");
     free(((void **)arg)[0]);
     int val;
     sem_t *sem = (sem_t *)((void **)arg)[1];
@@ -392,7 +391,6 @@ void _receiverAssistant_cleanup(void *arg) {
         val -= 1;
     }
     sem_destroy(sem);
-    printf("ASSISTENTE MORTO\n =======================================================\n");
 }
 
 void *_receiverAssistant(void *arg) {
@@ -459,17 +457,12 @@ void *_receiverAssistant(void *arg) {
 
     // ==
     for (;;) {
-        printf("Pegando slot\n");
         if (slot == NULL)
             slot = sw_getEmptySlot(window);
-        printf("slot pego\n");
         messageR = slot->data;
-        printf("Recebendo mensagem\n");
         receiveStatus = receive_message(socketFD, messageR);
-        printf("mensagem recebida\n");
         if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
             // Envia NACK
-            printf("ENVEI NACK\n");
             messageNACK->type = C_NACK;
             messageNACK->sequence = 0;  // Não tem
             messageNACK->length = sizeof(char);
@@ -521,7 +514,6 @@ void *_receiverAssistant(void *arg) {
             messageT->data[0] = messageR->sequence;
             *messageType = (unsigned char)messageR->type;
             currSeq = NEXT_SEQUENCE(currSeq);
-            printf("Enviando ACK\n");
             if (send_message(socketFD, messageT) == -1) {
                 fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
                 exit(-1);
@@ -542,7 +534,6 @@ void *_receiverAssistant(void *arg) {
         if (wrongSequence) {
             wrongSequence = 0;
             // Envia NACK (currSeq)
-            printf("Wrong Sequence\n");
             messageNACK->type = C_NACK;
             messageNACK->sequence = 0;  // Não tem
             messageNACK->length = sizeof(char);
@@ -561,16 +552,12 @@ void *_receiverAssistant(void *arg) {
         messageT->data[0] = messageR->sequence;
         *messageType = (unsigned char)messageR->type;
         currSeq = NEXT_SEQUENCE(currSeq);
-        printf("Enviando ACK\n");
         if (send_message(socketFD, messageT) == -1) {
             fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
             exit(-1);
         }
-        printf("Tentando inserir na sw\n");
         sw_insert(window, &slot);
-        printf("Inserido na sw\n");
         sem_post(sem);
-        printf("sem post\n");
     }
 
     pthread_cleanup_pop(1);
@@ -612,7 +599,6 @@ int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *type)
         messageR = slot->data;
         if ((bytesReceived + messageR->length) > len) {
             // Avisa o client de erro de buffer cheio
-            printf("Avisa o client de erro de buffer cheio\n");
             pthread_cancel(AssistantThread);
             void *packet_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
             t_message *messageT = init_message(packet_buffer);
