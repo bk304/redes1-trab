@@ -506,8 +506,31 @@ void *_receiverAssistant(void *arg) {
             continue;
         }
 
-        if (messageR->sequence == PREV_SEQUENCE(currSeq)) {
-            // O Ultimo ACK não foi recebido. Reenvie-o
+        if (messageR->sequence < currSeq) {
+            // ou messageR->sequence é maior que currSeq, mas ocorreu overflow
+            // nesse caso devemos discartar a mensagem e mandar NACK do currseq
+            // ou messageR->sequence é menor que currSeq, logo um ACK foi perdido
+            // nesse caso devemos reenviar o ultimo ACK
+
+            // Ha não ser que seja o segundo caso, será o primeiro
+            wrongSequence = 1;
+
+            int limit = PREV_MULT_SEQUENCE(messageR->sequence, window->capacity -1);
+            for (int s= PREV_SEQUENCE(messageR->sequence); s != limit; s= PREV_SEQUENCE(s)){
+                if( messageR->sequence == s ){
+                    // messageR->sequence é menor que currSeq
+                    wrongSequence = 2; 
+                }
+            }
+
+        } else if (messageR->sequence > currSeq) { 
+            // messageR->sequence é de fato maior que currSeq
+            // nesse caso devemos discartar a mensagem e mandar NACK do currseq
+            wrongSequence = 1;
+        }
+
+        if(!wrongSequence){
+            // Envia ACK
             messageT->type = C_ACK;
             messageT->sequence = 0;  // Não tem
             messageT->length = sizeof(char);
@@ -518,22 +541,12 @@ void *_receiverAssistant(void *arg) {
                 fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
                 exit(-1);
             }
-            continue;
+            sw_insert(window, &slot);
+            sem_post(sem);
         }
-
-        if (messageR->sequence < currSeq) {  // messageR.sequence deu overflow
-            if ((messageR->sequence + (SEQ_MAX + 1)) > currSeq) {
-                wrongSequence = 1;
-            }
-        } else {  // messageR.sequence NÃO deu overflow
-            if (messageR->sequence > currSeq) {
-                wrongSequence = 1;
-            }
-        }
-
-        if (wrongSequence) {
-            wrongSequence = 0;
+        else if (wrongSequence == 1) {
             // Envia NACK (currSeq)
+            wrongSequence = 0;
             messageNACK->type = C_NACK;
             messageNACK->sequence = 0;  // Não tem
             messageNACK->length = sizeof(char);
@@ -542,22 +555,24 @@ void *_receiverAssistant(void *arg) {
                 fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
                 exit(-1);
             }
-            continue;
+        }
+        else if (wrongSequence == 2){
+            // O Ultimo ACK não foi recebido. Reenvie-o
+            wrongSequence = 0;
+            messageT->type = C_ACK;
+            messageT->sequence = 0;  // Não tem
+            messageT->length = sizeof(char);
+            messageT->data[0] = messageR->sequence;
+            *messageType = (unsigned char)messageR->type;
+            currSeq = NEXT_SEQUENCE(currSeq);
+            if (send_message(socketFD, messageT) == -1) {
+                fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
+                exit(-1);
+            }
         }
 
-        // Envia ACK
-        messageT->type = C_ACK;
-        messageT->sequence = 0;  // Não tem
-        messageT->length = sizeof(char);
-        messageT->data[0] = messageR->sequence;
-        *messageType = (unsigned char)messageR->type;
-        currSeq = NEXT_SEQUENCE(currSeq);
-        if (send_message(socketFD, messageT) == -1) {
-            fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
-            exit(-1);
-        }
-        sw_insert(window, &slot);
-        sem_post(sem);
+        // Cuidado com wrongSequence ao inserir código aqui. \/
+
     }
 
     pthread_cleanup_pop(1);

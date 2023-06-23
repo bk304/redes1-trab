@@ -12,6 +12,8 @@
 #include "connectionManager.h"
 #include "message.h"
 #include "pilha.h"
+#include "tokenlizer.h"
+#include "gistfile1.h"
 
 #ifndef NETINTERFACE
 #error "NETINTERFACE não está definido. Use 'make [interface de rede]"
@@ -49,6 +51,9 @@ int main(void) {
 
     int socket = ConexaoRawSocket(NETINTERFACE);
 
+    char *argStr = malloc(2* ARG_MAX_SIZE * sizeof(char));
+    empilhar(freeHeap, argStr);
+
     void *packets_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
     empilhar(freeHeap, packets_buffer);
     t_message *messageR = init_message(packets_buffer);  // Você recebe uma resposta. (Pacote recebido)
@@ -81,6 +86,7 @@ int main(void) {
                 switch (typeR) {
                     case C_BACKUP_1FILE:
                         printf("Iniciando backup do arquivo \"%s\".\n", file_buffer);
+                        mkdir_p(file_buffer, 600);
                         curr_file = fopen((char *)file_buffer, "w+");
                         if (curr_file == NULL) {
                             estado = ERRO;
