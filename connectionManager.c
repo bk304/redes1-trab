@@ -11,6 +11,8 @@
 
 #include "message.h"
 
+#define WINDOW_TIMEOUT_SEC 1
+
 sliding_window_t *window = NULL;
 
 void lista_insere(sliding_window_node_t *p, sliding_window_node_t *lista);
@@ -158,6 +160,31 @@ sliding_window_node_t *sw_getEmptySlot(sliding_window_t *window) {
     return p;
 }
 
+void reenviaJanela(int socketFD, sliding_window_t *window) {
+    pthread_mutex_lock(&window->mutex);
+    // Reenvia a janela inteira.
+    if (window->size != 0) {
+        sliding_window_node_t *start = window->slots;
+        if (send_message(socketFD, start->data) == -1) {
+            fprintf(stderr, "ERRO NO SEND MESSAGE em _senderAssistant\n");
+            exit(-1);
+        }
+
+        sliding_window_node_t *p = start->next;
+        while (p != start) {
+            if (p->inUse == 0)
+                continue;
+            if (send_message(socketFD, p->data) == -1) {
+                fprintf(stderr, "ERRO NO SEND MESSAGE em _senderAssistant\n");
+                exit(-1);
+            }
+
+            p = p->next;
+        }
+    }
+    pthread_mutex_unlock(&window->mutex);
+}
+
 void _senderAssistant_cleanup(void *arg) {
     free(((void **)arg)[0]);
     sem_t *sem = (sem_t *)((void **)arg)[1];
@@ -191,7 +218,7 @@ void *_senderAssistant(void *arg) {
     pthread_cleanup_push(_senderAssistant_cleanup, cleanup_arg);
 
     for (;;) {
-        receiveStatus = receive_message(socketFD, messageR);
+        receiveStatus = receive_message(socketFD, messageR, WINDOW_TIMEOUT_SEC);
         if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
             // Envia NACK
             messageNACK->type = C_NACK;
@@ -202,6 +229,11 @@ void *_senderAssistant(void *arg) {
                 fprintf(stderr, "ERRO NO SEND MESSAGE em _senderAssistant\n");
                 exit(-1);
             }
+            continue;
+        } else if (receiveStatus == RECVM_TIMEOUT) {
+            // Reenvia a janela inteira.
+            reenviaJanela(socketFD, window);
+            printf("Ocorreu um timeout\n");
             continue;
         } else if (receiveStatus > 0) {
             // recebe normalmente
@@ -240,28 +272,8 @@ void *_senderAssistant(void *arg) {
         // }
 
         if (messageR->type == C_NACK) {
-            pthread_mutex_lock(&window->mutex);
             // Reenvia a janela inteira.
-            if (window->size != 0) {
-                sliding_window_node_t *start = window->slots;
-                if (send_message(socketFD, start->data) == -1) {
-                    fprintf(stderr, "ERRO NO SEND MESSAGE em _senderAssistant\n");
-                    exit(-1);
-                }
-
-                sliding_window_node_t *p = start->next;
-                while (p != start) {
-                    if (p->inUse == 0)
-                        continue;
-                    if (send_message(socketFD, p->data) == -1) {
-                        fprintf(stderr, "ERRO NO SEND MESSAGE em _senderAssistant\n");
-                        exit(-1);
-                    }
-
-                    p = p->next;
-                }
-            }
-            pthread_mutex_unlock(&window->mutex);
+            reenviaJanela(socketFD, window);
         }
     }
 
@@ -417,7 +429,7 @@ void *_receiverAssistant(void *arg) {
     // Recebe a metamensagem
     void *packet_messageR = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
     messageR = init_message(packet_messageR);
-    receiveStatus = receive_message(socketFD, messageR);
+    receiveStatus = receive_message(socketFD, messageR, 0);
     if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
         // Envia NACK
         messageNACK->type = C_NACK;
@@ -460,7 +472,7 @@ void *_receiverAssistant(void *arg) {
         if (slot == NULL)
             slot = sw_getEmptySlot(window);
         messageR = slot->data;
-        receiveStatus = receive_message(socketFD, messageR);
+        receiveStatus = receive_message(socketFD, messageR, 0);
         if (receiveStatus == RECVM_STATUS_PARITY_ERROR) {
             // Envia NACK
             messageNACK->type = C_NACK;
@@ -515,21 +527,21 @@ void *_receiverAssistant(void *arg) {
             // Ha não ser que seja o segundo caso, será o primeiro
             wrongSequence = 1;
 
-            int limit = PREV_MULT_SEQUENCE(messageR->sequence, window->capacity -1);
-            for (int s= PREV_SEQUENCE(messageR->sequence); s != limit; s= PREV_SEQUENCE(s)){
-                if( messageR->sequence == s ){
+            int limit = PREV_MULT_SEQUENCE(messageR->sequence, window->capacity - 1);
+            for (int s = PREV_SEQUENCE(messageR->sequence); s != limit; s = PREV_SEQUENCE(s)) {
+                if (messageR->sequence == s) {
                     // messageR->sequence é menor que currSeq
-                    wrongSequence = 2; 
+                    wrongSequence = 2;
                 }
             }
 
-        } else if (messageR->sequence > currSeq) { 
+        } else if (messageR->sequence > currSeq) {
             // messageR->sequence é de fato maior que currSeq
             // nesse caso devemos discartar a mensagem e mandar NACK do currseq
             wrongSequence = 1;
         }
 
-        if(!wrongSequence){
+        if (!wrongSequence) {
             // Envia ACK
             messageT->type = C_ACK;
             messageT->sequence = 0;  // Não tem
@@ -543,8 +555,7 @@ void *_receiverAssistant(void *arg) {
             }
             sw_insert(window, &slot);
             sem_post(sem);
-        }
-        else if (wrongSequence == 1) {
+        } else if (wrongSequence == 1) {
             // Envia NACK (currSeq)
             wrongSequence = 0;
             messageNACK->type = C_NACK;
@@ -555,8 +566,7 @@ void *_receiverAssistant(void *arg) {
                 fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
                 exit(-1);
             }
-        }
-        else if (wrongSequence == 2){
+        } else if (wrongSequence == 2) {
             // O Ultimo ACK não foi recebido. Reenvie-o
             wrongSequence = 0;
             messageT->type = C_ACK;
@@ -572,14 +582,13 @@ void *_receiverAssistant(void *arg) {
         }
 
         // Cuidado com wrongSequence ao inserir código aqui. \/
-
     }
 
     pthread_cleanup_pop(1);
     pthread_exit(NULL);
 }
 
-int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *type) {
+int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *returnedType) {
     if (window == NULL)
         window = sw_create(5);
 #ifdef DEBUG
@@ -659,7 +668,7 @@ int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *type)
         bytesReceived = -1;
     }
 
-    *type = messageType;
+    *returnedType = messageType;
 
     sw_free(window);
 

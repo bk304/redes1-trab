@@ -46,6 +46,6 @@ void sw_flush(sliding_window_t *window);
 
 int cm_send_message(int socketFD, void *buf, size_t len, int type, t_message *errorResponse);
 
-int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *type);
+int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *returnedType);
 
 #endif  // CONNECTION_MANAGET_H

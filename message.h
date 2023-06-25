@@ -70,6 +70,7 @@ typedef struct messageError {
     };
     unsigned char errorCode;
     int extraInfo;
+    int errnoCode;
 } messageError;
 
 #define DISK_FULL 0
@@ -77,12 +78,13 @@ typedef struct messageError {
 #define FILE_NOT_FOUND 2
 #define NO_READ_PERMISSION 3
 #define BUFFER_FULL 4
-#define UNKNOW_ERROR 5
+#define CHECK_ERRNO 5
 
 enum RECEIVE_MESSAGE_ERROR_STATUS {
     RECVM_STATUS_PARITY_ERROR = -1,  // Algo deu errado, pode crashar.
     RECVM_STATUS_PACKET_LOSS = -3,   // O outro lado não recebeu a sua resposta. Reenvie-a.
-    RECVM_STATUS_ERROR = -4          // A paridade está errada, envie NACK.
+    RECVM_STATUS_ERROR = -4,         // A paridade está errada, envie NACK.
+    RECVM_TIMEOUT = -5
 };
 
 // Inicializa a estrutura do pacote e da mensagem.
@@ -93,7 +95,7 @@ char *message_type_str(unsigned char type_code);
 
 int send_message(int socket, t_message *message);
 int send_nack(int socket, t_message *messageA, t_message *messageR);
-int receive_message(int socket, t_message *message);
+int receive_message(int socket, t_message *message, unsigned int timeoutSec);
 
 unsigned char message_parity(t_message *message);
 

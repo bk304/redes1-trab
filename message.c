@@ -2,17 +2,22 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "ethernet.h"
 #include "pthread.h"
 
+typedef void (*sighandler_t)(int);
 #define MESSAGE_PROTOCOL_ID (htons(0x7304))
+
+volatile sig_atomic_t flag = 0;  // Variável de sinalização
 
 pthread_mutex_t *message_mutex = NULL;
 unsigned char selfIdentifier = 0;
@@ -112,27 +117,29 @@ int send_nack(int socket, t_message *messageA, t_message *messageR) {
     return send_message(socket, messageA);
 }
 
-int receive_message(int socket, t_message *message) {
+void timeout_handler(int signum __attribute__((unused))) {
+    flag = 1;  // Sinaliza que o tempo expirou
+}
+
+int receive_message(int socket, t_message *message, unsigned int timeoutSec) {
     int read_status;
     void *packet = packetPtr_from_message(message);
     t_ethernet_frame *ethernet_packet = (t_ethernet_frame *)packet;
 
+    unsigned int oldAlarm;
+    sighandler_t oldHandler;
+
+    flag = 0;
+    oldHandler = signal(SIGALRM, timeout_handler);
+    oldAlarm = alarm(timeoutSec);
+
     for (;;) {
+        if (flag == 1)
+            return RECVM_TIMEOUT;
         read_status = recv(socket, packet, PACKET_SIZE_BYTES, MSG_TRUNC);
-#ifdef DEBUG
-        int old_state;
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
-        pthread_mutex_lock(message_mutex);
-        printf("\033[1;31m");
-        printf("MENSAGEM RECEBIDA ");
-        printMessage(message);
-        prinfhexMessage(message);
-        printf("\033[0m");
-        printf("\n");
-        pthread_mutex_unlock(message_mutex);
-        pthread_setcancelstate(old_state, &old_state);
-#endif
-        if (read_status == -1) {
+        if (read_status == EINTR || flag == 1) {
+            return RECVM_TIMEOUT;
+        } else if (read_status == -1) {
             return RECVM_STATUS_ERROR;
         }
 
@@ -173,6 +180,9 @@ int receive_message(int socket, t_message *message) {
 
         break;
     }
+
+    alarm(oldAlarm);
+    signal(SIGALRM, oldHandler);
 
 #ifdef DEBUG
     int old_state;
