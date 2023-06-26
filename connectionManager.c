@@ -30,7 +30,7 @@ sliding_window_t *sw_create(int slots) {
 
     unsigned char *packets_buffer = malloc(slots * PACKET_SIZE_BYTES * sizeof(unsigned char));
     window->packetPointer = packets_buffer;
-    t_message **messages = malloc(slots * sizeof(t_message *));
+    message_t **messages = malloc(slots * sizeof(message_t *));
     for (int i = 0; i < slots; i++) {
         messages[i] = init_message((i * PACKET_SIZE_BYTES) + packets_buffer);
     }
@@ -202,17 +202,17 @@ void _senderAssistant_cleanup(void *arg) {
 
 void *_senderAssistant(void *arg) {
     int socketFD = *((int *)((void **)arg)[0]);
-    t_message *errorResponse = (t_message *)((void **)arg)[1];
+    message_t *errorResponse = (message_t *)((void **)arg)[1];
     sem_t *sem = (sem_t *)((void **)arg)[2];
     char *threadCompleted = (char *)((void **)arg)[3];
     void *packets_buffer = malloc(2 * PACKET_SIZE_BYTES * sizeof(unsigned char));
-    t_message *messageR = init_message(packets_buffer);
-    t_message *messageNACK = init_message(packets_buffer + PACKET_SIZE_BYTES);
+    message_t *messageR = init_message(packets_buffer);
+    message_t *messageNACK = init_message(packets_buffer + PACKET_SIZE_BYTES);
     sliding_window_node_t *slot = NULL;
     int receiveStatus;
     int n;
     int seq;
-    t_message *data;
+    message_t *data;
 
     void *cleanup_arg[] = {packets_buffer, sem, threadCompleted};
     pthread_cleanup_push(_senderAssistant_cleanup, cleanup_arg);
@@ -249,7 +249,7 @@ void *_senderAssistant(void *arg) {
         }
 
         if (messageR->type != C_ACK && messageR->type != C_NACK) {
-            memcpy(errorResponse, messageR, sizeof(t_message));
+            memcpy(errorResponse, messageR, sizeof(message_t));
             pthread_exit(NULL);
         }
 
@@ -257,11 +257,11 @@ void *_senderAssistant(void *arg) {
         // Só lembrando que messageR sempre será ACK ou NACK
         sw_peek(window, &slot);
         data = slot->data;
-        if (((ACK_NACK_CODE *)messageR)->code < ((t_message *)data)->sequence)
+        if (((ACK_NACK_CODE *)messageR)->code < ((message_t *)data)->sequence)
             seq = ((ACK_NACK_CODE *)messageR)->code + (SEQ_MAX + 1);
         else
             seq = ((ACK_NACK_CODE *)messageR)->code;
-        n = seq + (messageR->type == C_ACK ? 1 : 0) - ((t_message *)data)->sequence;
+        n = seq + (messageR->type == C_ACK ? 1 : 0) - ((message_t *)data)->sequence;
         sw_remove(window, n);
         for (int i = n; i > 0; i--) {
             sem_post(sem);
@@ -281,7 +281,7 @@ void *_senderAssistant(void *arg) {
     pthread_exit(NULL);
 }
 
-int cm_send_message(int socketFD, void *buf, size_t len, int type, t_message *errorResponse) {
+int cm_send_message(int socketFD, void *buf, size_t len, int type, message_t *errorResponse) {
     if (window == NULL)
         window = sw_create(5);
 #ifdef DEBUG
@@ -299,7 +299,7 @@ int cm_send_message(int socketFD, void *buf, size_t len, int type, t_message *er
     if (qntOfPackets == 0)
         qntOfPackets = 1;
     int currSeq = 0;
-    t_message *messageT;
+    message_t *messageT;
     sliding_window_node_t *slot = NULL;
     pthread_t AssistantThread;
     char assistantExited = 0;
@@ -417,9 +417,9 @@ void *_receiverAssistant(void *arg) {
     pthread_cleanup_push(_receiverAssistant_cleanup, cleanup_arg);
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
-    t_message *messageR;                                                        // Mensagem recebida
-    t_message *messageT = init_message(packets_buffer);                         // Usado pra enviar mensagens
-    t_message *messageNACK = init_message(packets_buffer + PACKET_SIZE_BYTES);  // Usado pra enviar NACK em caso de erro de paridade
+    message_t *messageR;                                                        // Mensagem recebida
+    message_t *messageT = init_message(packets_buffer);                         // Usado pra enviar mensagens
+    message_t *messageNACK = init_message(packets_buffer + PACKET_SIZE_BYTES);  // Usado pra enviar NACK em caso de erro de paridade
     sliding_window_node_t *slot = NULL;
     int currSeq = 0;
     char wrongSequence = 0;
@@ -600,7 +600,7 @@ int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *retur
     printf("Window: %d size | %d itens | %d vagas", window->size, itens, vagas);
 #endif
     size_t bytesReceived = 0;
-    t_message *messageR;
+    message_t *messageR;
     pthread_t AssistantThread;
     sem_t sem;
     sliding_window_node_t *slot = NULL;
@@ -625,7 +625,7 @@ int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *retur
             // Avisa o client de erro de buffer cheio
             pthread_cancel(AssistantThread);
             void *packet_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
-            t_message *messageT = init_message(packet_buffer);
+            message_t *messageT = init_message(packet_buffer);
 
             messageError *messageErr = (messageError *)messageT;
             messageErr->type = C_ERROR;

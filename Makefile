@@ -20,11 +20,11 @@ endif
 RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS)) \
 	$(eval $(RUN_ARGS):;@:)
 
-client: Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o gistfile1.o
-	gcc $(CFLAGS) $(LFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o gistfile1.o $(WARNING)
+client: Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o
+	gcc $(CFLAGS) $(LFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o $(WARNING)
 
-server: Server.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o gistfile1.o
-	gcc $(CFLAGS) $(LFLAGS) -o server Server.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o gistfile1.o $(WARNING)
+server: Server.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o
+	gcc $(CFLAGS) $(LFLAGS) -o server Server.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o $(WARNING)
 
 ConexaoRawSocket.o: ConexaoRawSocket.c ConexaoRawSocket.h
 	gcc $(CFLAGS) -o ConexaoRawSocket.o -c ConexaoRawSocket.c $(WARNING)
@@ -38,8 +38,8 @@ pilha.o: pilha.c pilha.h
 tokenlizer.o: tokenlizer.c tokenlizer.h
 	gcc $(CFLAGS) -o tokenlizer.o -c tokenlizer.c $(WARNING)
 
-gistfile1.o: gistfile1.c gistfile1.h
-	gcc $(CFLAGS) -o gistfile1.o -c gistfile1.c $(WARNING)
+files.o: files.c files.h
+	gcc $(CFLAGS) -o files.o -c files.c $(WARNING)
 
 connectionManager.o: connectionManager.c connectionManager.h message.h
 	gcc $(CFLAGS) -o connectionManager.o -c connectionManager.c $(WARNING)

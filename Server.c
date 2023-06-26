@@ -27,15 +27,321 @@
 #define SV_ROOT_PATH ("./serverFolder")
 #define DEFAULT_PATH ("./serverFolder/backups/default")
 
-enum estados {
-    ESPERANDO_COMANDO,
-    RECEBENDO_BACKUP_FILE,
-    RECEBENDO_BACKUP_GROUP,
-    EXECUTANDO_REC,
-    ENVIANDO_REC_FILE,
+typedef enum ResultType {
+    OK,
+    ERRO_NO_CLIENT_WARNING,
     ERRO,
-    EXIT
+} ResultType;
+
+typedef struct Result {
+    ResultType type;
+    int v;
+} Result;
+
+enum REQUEST_HANDLER_ERRORS {
+    BROKEN_LOGIC,
 };
+
+typedef struct Server {
+    int socket;
+    unsigned char *buffer;
+    FILE *curr_file;
+} Server;
+
+Result receber_backup_file(Server *server);
+Result receber_backup_group(Server *server);
+Result enviar_recover_file(Server *server);
+Result enviar_recover_group(Server *server);
+Result cd_server(Server *server);
+Result verifica_backup(Server *server);
+
+Result receber_backup_file(Server *server) {
+    Result r;
+    unsigned char typeT, typeR;
+    int bytesT, bytesR;
+    message_t messageR;
+
+    printf("Iniciando backup do arquivo \"%s\".\n", server->buffer);
+    server->curr_file = fopen(getFileName((char *)server->buffer), "w+");
+    if (server->curr_file == NULL) {
+        printf("Falha ao abrir o arquivo. Backup abortado.\n");
+        r.type = ERRO;
+        typeT = C_ERROR;
+        bytesT = 1;
+        if (errno == EACCES)
+            ((messageError *)server->buffer)->errorCode = NO_WRITE_PERMISSION;
+        else if (errno == EDQUOT)
+            ((messageError *)server->buffer)->errorCode = DISK_FULL;
+        else {
+            bytesT = 2;
+            ((messageError *)server->buffer)->errorCode = CHECK_ERRNO;
+            ((messageError *)server->buffer)->errnoCode = errno;
+        }
+    } else {
+        typeT = C_OK;
+        bytesT = 0;
+    }
+    if (cm_send_message(server->socket, server->buffer, bytesT, typeT, &messageR) == -1)
+        exit(-1);
+
+    if (messageR.type == C_ERROR) {
+        r.type = ERRO;
+        return r;
+    }
+
+    for (;;) {
+        if ((bytesR = cm_receive_message(server->socket, server->buffer, BUFFER_SIZE, &typeR)) == -1)
+            exit(-1);
+
+        if (typeR == C_DATA) {
+            fwrite(server->buffer, 1, bytesR, server->curr_file);
+        } else if (typeR == C_END_OF_FILE) {
+            fclose(server->curr_file);
+            if (cm_send_message(server->socket, server->buffer, 0, C_OK, &messageR) == -1)
+                exit(-1);
+            if (messageR.type == C_ERROR) {
+                r.type = ERRO;
+                return r;
+            }
+            break;
+        } else {
+            printf("BROKEN LOGIC: %d\n", typeR);
+            r.type = ERRO;
+            return r;
+        }
+    }
+
+    printf("Backup Concluido.\n");
+    r.type = OK;
+    return r;
+}
+
+Result receber_backup_group(Server *server) {
+    Result r;
+    r.type = ERRO;
+    return r;
+}
+
+Result enviar_recover_file(Server *server) {
+    Result r;
+    unsigned char typeT, typeR;
+    int bytesT, bytesR;
+    message_t messageR;
+    int argc;
+    char *argv[4096];
+    int arquivos_processados = 0;
+    int qnt_arquivos = 0;
+    int bytesToSend;
+    int offset = 0;
+    int status;
+
+    // Separa nomes com asterisco (*) em todas as possibilidades
+    if (tokenlize((char *)server->buffer, &argc, argv)) {
+        exit(-1);
+    }
+
+    // Verifica se todos os arquivos são acessiveis
+    r.type = OK;
+    for (int i = 0; i < argc; i++) {
+        if (access(argv[i], R_OK) != 0) {
+            printf("  \"%s\" \033[1;31m(Arquivo inexistante ou sem permissão de leitura)\033[0m\n", argv[i]);
+            r.type = ERRO;
+        } else {
+            printf("  \"%s\"\n", argv[i]);
+        }
+    }
+
+    if (r.type != ERRO) {
+        // Se tudo foi OK:
+        typeT = C_OK;
+        bytesT = sizeof(int);
+        qnt_arquivos = argc;
+        ((int *)server->buffer)[0] = qnt_arquivos;
+    } else {
+        // No caso de um erro ter ocorrido:
+        printf("\033[1;31mOperação abortada.\033[0m\n");
+        typeT = C_ERROR;
+        bytesT = 1;
+        if (errno == EACCES)
+            ((messageError *)server->buffer)->errorCode = NO_READ_PERMISSION;
+        else if (errno == ENOENT)
+            ((messageError *)server->buffer)->errorCode = FILE_NOT_FOUND;
+        else {
+            bytesT = 2;
+            ((messageError *)server->buffer)->errorCode = CHECK_ERRNO;
+            ((messageError *)server->buffer)->errnoCode = errno;
+        }
+    }
+
+    if (cm_send_message(server->socket, server->buffer, bytesT, typeT, &messageR) == -1)
+        exit(-1);
+    if (messageR.type == C_ERROR) {
+        r.type = ERRO;
+        return r;
+    }
+
+    if (r.type == ERRO) {
+        // A mensagem que avisa o client já foi enviada
+        // Então podemos sair da função;
+        return r;
+    }
+
+    if (cm_receive_message(server->socket, server->buffer, BUFFER_SIZE, (unsigned char *)&typeR) == -1)
+        exit(-1);
+
+    // Já que são acessiveis, agora começará a enviar eles
+    while (arquivos_processados < qnt_arquivos) {
+        //
+        // Abre um arquivo e envia o nome para o cliente.
+        // Caso o cliente consiga criar um arquivo, continua.
+        char *filename = argv[arquivos_processados];
+        r.type = ERRO;
+        if (open_file(&(server->curr_file), filename) == 0)
+            if (cm_send_message(server->socket, filename, strlen(filename) + sizeof((char)'\0'), C_FILE_NAME, &messageR) != -1)
+                if (cm_receive_message(server->socket, server->buffer, BUFFER_SIZE, (unsigned char *)&typeR) != -1) {
+                    if (typeR == C_OK)
+                        r.type = OK;
+                    else {
+                        r.type = ERRO_NO_CLIENT_WARNING;
+                        errno = ((messageError *)server->buffer)->errnoCode;
+                    }
+                }
+
+        if (r.type != OK) {
+            printf("Broken Logic 3: %d\n", typeR);
+            return r;
+        }
+
+        // O arquivo esta aberto
+        // Aqui ele será enviado
+        while (!feof(server->curr_file)) {
+            bytesToSend = fread(server->buffer, 1, BUFFER_SIZE, server->curr_file);
+            while (bytesToSend != 0) {
+                status = cm_send_message(server->socket, server->buffer + offset, bytesToSend, C_DATA, &messageR);
+                if (status == -1) {
+                    messageError *messageErr = (messageError *)&messageR;
+                    if (messageErr->type == C_ERROR && messageErr->errorCode == BUFFER_FULL) {
+                        offset += messageErr->extraInfo;
+                        bytesToSend -= messageErr->extraInfo;
+                    } else {
+                        exit(-1);
+                    }
+                }
+
+                bytesToSend -= status;
+            }
+        }
+
+        // Chegou no final do arquivo
+        arquivos_processados += 1;
+        r.type = ERRO;
+        if (cm_send_message(server->socket, server->buffer, 0, C_END_OF_FILE, &messageR) != -1)
+            if (cm_receive_message(server->socket, server->buffer, 1, &typeR) != -1)
+                if (typeR == C_OK) {
+                    r.type = OK;
+                    fprintf(stdout, "\033[%dA\033[0K\r", qnt_arquivos - arquivos_processados + 1);
+                    fprintf(stdout, "  \"%s\" \033[0;32m(Enviado)", argv[arquivos_processados - 1]);
+                    fprintf(stdout, "\033[%dB\033[0K\r\033[0m", qnt_arquivos - arquivos_processados + 1);
+                    fflush(stdout);
+                }
+
+        if (r.type != OK) {
+            fprintf(stdout, "\033[%dA\033[0K\r", qnt_arquivos - arquivos_processados + 1);
+            fprintf(stdout, "  \"%s\" \033[1;31m(ERRO)", argv[arquivos_processados - 1]);
+            fprintf(stdout, "\033[%dB\033[0K\r\033[0m", qnt_arquivos - arquivos_processados + 1);
+            fflush(stdout);
+            return r;
+        }
+    }  // while (arquivos_processados < qnt_arquivos)
+
+    r.type = OK;
+    return r;
+}
+
+Result enviar_recover_group(Server *server) {
+    Result r;
+    r.type = ERRO;
+    return r;
+}
+
+Result cd_server(Server *server) {
+    Result r;
+    unsigned char typeT, typeR;
+    int bytesT, bytesR;
+    message_t messageR;
+
+    printf("Trocando de diretório para: \"%s\".\n", server->buffer);
+    mkdir_p((char *)server->buffer, S_IRUSR | S_IWUSR);
+    if (chdir((char *)server->buffer) != 0) {
+        printf("Impossível trocar para esse diretório.\n");
+        r.type = ERRO;
+        typeT = C_ERROR;
+        bytesT = 2;
+        ((messageError *)server->buffer)->errorCode = CHECK_ERRNO;
+        ((messageError *)server->buffer)->errnoCode = errno;
+    } else {
+        typeT = C_OK;
+        bytesT = 0;
+    }
+    if (cm_send_message(server->socket, server->buffer, bytesT, typeT, &messageR) == -1)
+        exit(-1);
+
+    r.type = OK;
+    return r;
+}
+
+Result verifica_backup(Server *server) {
+    Result r;
+    r.type = ERRO;
+    return r;
+}
+
+Result request_handler(Server *server, int bytesReceived, unsigned int typeReceived) {
+    Result r;
+    Result status;
+
+    if (!(isCommandMessageType(typeReceived))) {
+        r.type = ERRO;
+        r.v = BROKEN_LOGIC;  // O Client deve ser reiniciado.
+        return r;
+    }
+    // São as mensagens dos tipos:
+    //      C_BACKUP_FILE 0b0000
+    //      C_BACKUP_GROUP 0b0001
+    //      C_RECOVER_FILE 0b0010
+    //      C_RECOVER_GROUP 0b0011
+    //      C_CD_SERVER 0b0100
+    //      C_VERIFY 0b0101
+
+    switch (typeReceived) {
+        case C_BACKUP_FILE:
+            r = receber_backup_file(server);
+            break;
+
+        case C_BACKUP_GROUP:
+            r = receber_backup_group(server);
+            break;
+
+        case C_RECOVER_FILE:
+            r = enviar_recover_file(server);
+            break;
+
+        case C_RECOVER_GROUP:
+            r = enviar_recover_group(server);
+            break;
+
+        case C_CD_SERVER:
+            r = cd_server(server);
+            break;
+
+        case C_VERIFY:
+            r = verifica_backup(server);
+            break;
+
+        default:
+            exit(-1);
+    }
+}
 
 void libera_e_sai(__attribute__((unused)) int exitCode, void *freeHeap) {
     void *ptr = NULL;
@@ -60,24 +366,24 @@ int main(void) {
     chroot(SV_ROOT_PATH);
     chdir(DEFAULT_PATH);
 
-    int socket = ConexaoRawSocket(NETINTERFACE);
-
     char *argStr = malloc(2 * ARG_MAX_SIZE * sizeof(char));
     empilhar(freeHeap, argStr);
 
     void *packets_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
     empilhar(freeHeap, packets_buffer);
-    t_message *messageR = init_message(packets_buffer);  // Você recebe uma resposta. (Pacote recebido)
+    message_t *messageR = init_message(packets_buffer);  // Você recebe uma resposta. (Pacote recebido)
 
-    int estado = ESPERANDO_COMANDO;
-    FILE *curr_file = NULL;
-    unsigned char *buffer = malloc(BUFFER_SIZE * sizeof(unsigned char));
-    empilhar(freeHeap, buffer);
-    if (buffer == NULL) {
-        printf("Falha ao alocar buffer de arquivo.\n");
+    Server server;
+    server.socket = ConexaoRawSocket(NETINTERFACE);
+    server.curr_file = NULL;
+    server.buffer = malloc(BUFFER_SIZE * sizeof(unsigned char));
+    empilhar(freeHeap, server.buffer);
+    if (server.buffer == NULL) {
+        printf("Falha ao alocar buffer do server.\n");
         exit(-1);
     }
 
+    Result r;
     int arquivos_processados = 0;
     int qnt_arquivos = 0;
     int argc;
@@ -90,240 +396,30 @@ int main(void) {
     int bytesT;
 
     printf("Lendo socket...\n");
-    // Primeira mensagem.
-    if ((bytesR = cm_receive_message(socket, buffer, BUFFER_SIZE, &typeR)) == -1)
-        exit(-1);
 
+    // NEW
     for (;;) {
-        switch (estado) {
-            // ==
-            case ESPERANDO_COMANDO:
-                count = 0;
-                switch (typeR) {
-                    case C_BACKUP_1FILE:
-                        printf("Iniciando backup do arquivo \"%s\".\n", buffer);
-                        curr_file = fopen(getFileName((char *)buffer), "w+");
-                        if (curr_file == NULL) {
-                            printf("Falha ao abrir o arquivo. Backup abortado.\n");
-                            estado = ERRO;
-                            typeT = C_ERROR;
-                            bytesT = 1;
-                            if (errno == EACCES)
-                                ((messageError *)buffer)->errorCode = NO_WRITE_PERMISSION;
-                            else if (errno == EDQUOT)
-                                ((messageError *)buffer)->errorCode = DISK_FULL;
-                            else {
-                                bytesT = 2;
-                                ((messageError *)buffer)->errorCode = CHECK_ERRNO;
-                                ((messageError *)buffer)->errnoCode = errno;
-                            }
-                        } else {
-                            estado = RECEBENDO_BACKUP_FILE;
-                            typeT = C_OK;
-                            bytesT = 0;
-                        }
-                        if (cm_send_message(socket, buffer, bytesT, typeT, messageR) == -1)
-                            exit(-1);
-                        break;
+        if ((bytesR = cm_receive_message(server.socket, server.buffer, BUFFER_SIZE, &typeR)) == -1)
+            exit(-1);
 
-                    case C_BACKUP_GROUP:
-                        break;
-                    case C_RECOVER_1FILE:
-                        // Separa nomes com asterisco (*) em todas as possibilidades
-                        if (tokenlize((char *)buffer, &argc, argv)) {
-                            exit(-1);
-                        }
-
-                        // else if (!is_regular_file(argv[i])) {
-                        //     printf("  \"%s\" \033[1;31m(Arquivo não é um arquivo regular)\033[0m\n", argv[i]);
-                        //     estado = PROMPT_DE_COMANDO;
-                        // }
-                        estado = EXECUTANDO_REC;
-                        for (int i = 0; i < argc; i++) {
-                            if (access(argv[i], R_OK) != 0) {
-                                printf("  \"%s\" \033[1;31m(Arquivo inexistante ou sem permissão de leitura)\033[0m\n", argv[i]);
-                                estado = ERRO;
-                            } else {
-                                printf("  \"%s\"\n", argv[i]);
-                            }
-                        }
-                        // No caso de um erro ter ocorrido:
-                        if (estado == ERRO) {
-                            printf("\033[1;31mOperação abortada.\033[0m\n");
-                            typeT = C_ERROR;
-                            bytesT = 1;
-                            if (errno == EACCES)
-                                ((messageError *)buffer)->errorCode = NO_READ_PERMISSION;
-                            else if (errno == ENOENT)
-                                ((messageError *)buffer)->errorCode = FILE_NOT_FOUND;
-                            else {
-                                bytesT = 2;
-                                ((messageError *)buffer)->errorCode = CHECK_ERRNO;
-                                ((messageError *)buffer)->errnoCode = errno;
-                            }
-                        } else {
-                            typeT = C_OK;
-                            bytesT = sizeof(int);
-                            qnt_arquivos = argc;
-                            ((int *)buffer)[0] = qnt_arquivos;
-                        }
-                        if (cm_send_message(socket, buffer, bytesT, typeT, messageR) == -1)
-                            exit(-1);
-                        break;
-
-                    case C_RECOVER_GROUP:
-                        break;
-                    case C_CD_SERVER:
-                        printf("Trocando de diretório para: \"%s\".\n", buffer);
-                        mkdir_p((char *)buffer, S_IRUSR | S_IWUSR);
-                        if (chdir((char *)buffer) != 0) {
-                            estado = ERRO;
-                            typeT = C_ERROR;
-                            bytesT = 2;
-                            ((messageError *)buffer)->errorCode = CHECK_ERRNO;
-                            ((messageError *)buffer)->errnoCode = errno;
-                        } else {
-                            estado = ESPERANDO_COMANDO;
-                            typeT = C_OK;
-                            bytesT = 0;
-                        }
-                        if (cm_send_message(socket, buffer, bytesT, typeT, messageR) == -1)
-                            exit(-1);
-                        break;
-                    default:
-                        break;
-                }  // switch (messageT->type)
-                if ((bytesR = cm_receive_message(socket, buffer, BUFFER_SIZE, &typeR)) == -1)
-                    exit(-1);
-                break;  // case ESPERANDO_COMANDO
-
-            // ==
-            case RECEBENDO_BACKUP_FILE:
-                switch (typeR) {
-                    case C_DATA:
-                        fwrite(buffer, 1, bytesR, curr_file);
-                        estado = RECEBENDO_BACKUP_FILE;
-                        break;
-                    case C_END_OF_FILE:
-                        fclose(curr_file);
-                        if (cm_send_message(socket, buffer, 0, C_OK, messageR) == -1)
-                            exit(-1);
-                        printf("Backup Concluido.\n");
-                        estado = ESPERANDO_COMANDO;
-                        break;
-                    default:
-                        estado = ERRO;
-                        break;
-                }  // switch (typeR)
-                if ((bytesR = cm_receive_message(socket, buffer, BUFFER_SIZE, &typeR)) == -1)
-                    exit(-1);
-                break;  // case RECEBENDO_BACKUP_FILE
-
-            // ==
-            case RECEBENDO_BACKUP_GROUP:
-                switch (typeR) {
-                    case C_FILE_NAME:
-                        break;
-                    case C_DATA:
-                        break;
-                    case C_END_OF_FILE:
-                        break;
-                    case C_END_OF_GROUP:
-                        break;
-                    default:
-                        break;
-                }       // switch (typeR)
-                break;  // case RECEBENDO_BACKUP_GROUP
-
-            // ==
-            case EXECUTANDO_REC:
-                estado = ERRO;
-                if (count == 0) {
-                    // Veio do estado PROMPT_DE_COMANDO para esse
-                    count++;
-                    arquivos_processados = 0;
-                    qnt_arquivos = argc;
-                }
-
-                if (arquivos_processados >= qnt_arquivos) {
-                    estado = ESPERANDO_COMANDO;
-                    break;
-                }
-                char *filename = argv[arquivos_processados];
-                if (open_file(&curr_file, filename) == 0)
-                    if (cm_send_message(socket, filename, strlen(filename) + sizeof((char)'\0'), C_FILE_NAME, messageR) != -1)
-                        if (cm_receive_message(socket, buffer, BUFFER_SIZE, &typeR) != -1) {
-                            if (typeR == C_OK)
-                                estado = ENVIANDO_REC_FILE;
-                            else {
-                                estado = ERRO;
-                                errno = ((messageError *)buffer)->errnoCode;
-                            }
-                        }
-
+        r = request_handler(&server, bytesR, typeR);
+        switch (r.type) {
+            case OK:
+                /* code */
                 break;
 
-            // ==
-            case ENVIANDO_REC_FILE:
-                estado = ERRO;
-                if (feof(curr_file)) {
-                    if (cm_send_message(socket, buffer, 0, C_END_OF_FILE, messageR) != -1)
-                        if (cm_receive_message(socket, buffer, 1, &typeR) != -1)
-                            if (typeR == C_OK) {  // Enviou todo o arquivo.
-                                estado = EXECUTANDO_REC;
-                                arquivos_processados += 1;
-                                fprintf(stdout, "\033[%dA\033[0K\r", qnt_arquivos - arquivos_processados + 1);
-                                fprintf(stdout, "  \"%s\" \033[0;32m(Enviado)", argv[arquivos_processados - 1]);
-                                fprintf(stdout, "\033[%dB\033[0K\r\033[0m", qnt_arquivos - arquivos_processados + 1);
-                                fflush(stdout);
-                            }
-                    break;
-                }
-
-                int bytesToSend;
-                int offset = 0;
-                bytesToSend = fread(buffer, 1, BUFFER_SIZE, curr_file);
-                for (;;) {
-                    if (cm_send_message(socket, buffer + offset, bytesToSend, C_DATA, messageR) != -1) {
-                        estado = ENVIANDO_REC_FILE;
-                        break;
-                    } else {
-                        messageError *messageErr = (messageError *)messageR;
-                        if (messageErr->type == C_ERROR && messageErr->errorCode == BUFFER_FULL) {
-                            offset += messageErr->extraInfo;
-                            bytesToSend -= messageErr->extraInfo;
-                        } else {
-                            printf("type: %d e extra: %d\n", messageErr->type, messageErr->errorCode);
-                            estado = ERRO;
-                            break;
-                        }
-                    }
-                }
-
-                if (estado == ERRO) {
-                    arquivos_processados += 1;
-                    fprintf(stdout, "\033[%dA\033[0K\r", qnt_arquivos - arquivos_processados + 1);
-                    fprintf(stdout, "  \"%s\" \033[1;31m(ERRO)", argv[arquivos_processados - 1]);
-                    fprintf(stdout, "\033[%dB\033[0K\r\033[0m", qnt_arquivos - arquivos_processados + 1);
-                    fflush(stdout);
-                }
-                break;
-
-            // ==
-            case EXIT:
-                exit(0);
-
-            // ==
             case ERRO:
-            default:
+                // Envia mensagem pro client pedindo para reiniciar.
+                // E volta a ouvir por comandos
                 printf("Ocorreu um erro.\n\t%s\n", strerror(errno));
-                estado = ESPERANDO_COMANDO;
-                if ((bytesR = cm_receive_message(socket, buffer, BUFFER_SIZE, &typeR)) == -1)
-                    exit(-1);
                 break;
-        }  // switch (estado)
 
-    }  // for (;;)
+            case ERRO_NO_CLIENT_WARNING:
+                // Faz a mesma coisa que o ERRO normal, mas não vai enviar uma mensagem avisando o client.
+                printf("Ocorreu um erro.\n\t%s\n", strerror(errno));
+                break;
+        }
+    }
 
     exit(0);
 }

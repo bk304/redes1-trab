@@ -7,7 +7,7 @@
 #include "message.h"
 
 typedef struct sliding_window_node_t {
-    t_message *data;
+    message_t *data;
     struct sliding_window_node_t *next;
     struct sliding_window_node_t *prev;
     char inUse;
@@ -44,7 +44,7 @@ void sw_free(sliding_window_t *window);
 
 void sw_flush(sliding_window_t *window);
 
-int cm_send_message(int socketFD, void *buf, size_t len, int type, t_message *errorResponse);
+int cm_send_message(int socketFD, void *buf, size_t len, int type, message_t *errorResponse);
 
 int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *returnedType);
 

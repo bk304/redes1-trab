@@ -17,7 +17,7 @@
 #define PREV_SEQUENCE(seq) ((seq + 63) % (SEQ_MAX + 1))
 #define PREV_MULT_SEQUENCE(seq, qnt) ((seq + 63 - qnt) % (SEQ_MAX + 1))
 
-typedef struct t_message {
+typedef struct message_t {
     unsigned char start_frame_delimiter;
     struct __attribute__((__packed__)) {
         unsigned char type : TYPE_BITFIELD_SIZE;
@@ -26,15 +26,15 @@ typedef struct t_message {
     };
     unsigned char data[DATA_MAX_SIZE_BYTES];
     unsigned char parity;
-} t_message;
+} message_t;
 
 #define START_FRAME_DELIMITER 0b01111110
 
 // MESSAGE CODES
 
-#define C_BACKUP_1FILE 0b0000
+#define C_BACKUP_FILE 0b0000
 #define C_BACKUP_GROUP 0b0001
-#define C_RECOVER_1FILE 0b0010
+#define C_RECOVER_FILE 0b0010
 #define C_RECOVER_GROUP 0b0011
 #define C_CD_SERVER 0b0100
 #define C_VERIFY 0b0101
@@ -89,20 +89,21 @@ enum RECEIVE_MESSAGE_ERROR_STATUS {
 
 // Inicializa a estrutura do pacote e da mensagem.
 // O buffer do pacote deve ser ter, no mínimo, tamanho PACKET_SIZE_BYTES.
-t_message *init_message(void *packet_buffer);
+message_t *init_message(void *packet_buffer);
 
 char *message_type_str(unsigned char type_code);
+char isCommandMessageType(unsigned char type_code);
 
-int send_message(int socket, t_message *message);
-int send_nack(int socket, t_message *messageA, t_message *messageR);
-int receive_message(int socket, t_message *message, unsigned int timeoutSec);
+int send_message(int socket, message_t *message);
+int send_nack(int socket, message_t *messageA, message_t *messageR);
+int receive_message(int socket, message_t *message, unsigned int timeoutSec);
 
-unsigned char message_parity(t_message *message);
+unsigned char message_parity(message_t *message);
 
-void printMessage(t_message *message);
-void prinfhexMessage(t_message *message);
+void printMessage(message_t *message);
+void prinfhexMessage(message_t *message);
 
-void *packetPtr_from_message(t_message *message);
+void *packetPtr_from_message(message_t *message);
 
 void flush_recv_queue(int socket);
 

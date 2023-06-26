@@ -26,11 +26,11 @@ unsigned char lastParity = 0xFF;
 unsigned char lastSeq = 90;
 #endif
 
-void *packetPtr_from_message(t_message *message) {
+void *packetPtr_from_message(message_t *message) {
     return ((void *)message) - 14;
 }
 
-t_message *init_message(void *packet_buffer) {
+message_t *init_message(void *packet_buffer) {
 #ifdef DEBUG
     if (message_mutex == NULL) {
         message_mutex = malloc(sizeof(pthread_mutex_t));
@@ -44,7 +44,7 @@ t_message *init_message(void *packet_buffer) {
     memset(ethernet_packet->mac_source, 0x00, 6);
     ethernet_packet->mac_source[0] = selfIdentifier;
     *((short *)ethernet_packet->len_or_type) = MESSAGE_PROTOCOL_ID;
-    t_message *message = (t_message *)ethernet_packet->payload;
+    message_t *message = (message_t *)ethernet_packet->payload;
 
     message->start_frame_delimiter = START_FRAME_DELIMITER;
 
@@ -53,11 +53,11 @@ t_message *init_message(void *packet_buffer) {
 
 char *message_type_str(unsigned char type_code) {
     switch (type_code) {
-        case C_BACKUP_1FILE:
+        case C_BACKUP_FILE:
             return "backup de 1 arquivo";
         case C_BACKUP_GROUP:
             return "backup de grupo de arquivos";
-        case C_RECOVER_1FILE:
+        case C_RECOVER_FILE:
             return "recuperar 1 arquivo";
         case C_RECOVER_GROUP:
             return "recuperar um grupo de arquivos";
@@ -90,7 +90,18 @@ char *message_type_str(unsigned char type_code) {
     return NULL;
 }
 
-int send_message(int socket, t_message *message) {
+char isCommandMessageType(unsigned char type_code) {
+    // São as mensagens dos tipos:
+    //      C_BACKUP_FILE 0b0000
+    //      C_BACKUP_GROUP 0b0001
+    //      C_RECOVER_FILE 0b0010
+    //      C_RECOVER_GROUP 0b0011
+    //      C_CD_SERVER 0b0100
+    //      C_VERIFY 0b0101
+    return (type_code <= 5);
+}
+
+int send_message(int socket, message_t *message) {
     message->parity = message_parity(message);
     t_ethernet_frame *ethernet_packet = packetPtr_from_message(message);
     ethernet_packet->mac_source[0] = selfIdentifier;
@@ -110,7 +121,7 @@ int send_message(int socket, t_message *message) {
     return send(socket, packetPtr_from_message(message), PACKET_SIZE_BYTES, 0);
 }
 
-int send_nack(int socket, t_message *messageA, t_message *messageR) {
+int send_nack(int socket, message_t *messageA, message_t *messageR) {
     messageA->length = 0;
     messageA->sequence = messageR->sequence;
     messageA->type = C_NACK;
@@ -121,7 +132,7 @@ void timeout_handler(int signum __attribute__((unused))) {
     flag = 1;  // Sinaliza que o tempo expirou
 }
 
-int receive_message(int socket, t_message *message, unsigned int timeoutSec) {
+int receive_message(int socket, message_t *message, unsigned int timeoutSec) {
     int read_status;
     void *packet = packetPtr_from_message(message);
     t_ethernet_frame *ethernet_packet = (t_ethernet_frame *)packet;
@@ -210,7 +221,7 @@ int receive_message(int socket, t_message *message, unsigned int timeoutSec) {
     return read_status;
 }
 
-unsigned char message_parity(t_message *message) {
+unsigned char message_parity(message_t *message) {
     unsigned char paridade = 0b00000000;
 
     // A paridade só será feita nos campos
@@ -225,11 +236,11 @@ unsigned char message_parity(t_message *message) {
     return paridade % 255;
 }
 
-void printMessage(t_message *message) {
+void printMessage(message_t *message) {
     printf("SEQ: %d | TYPE: %s | TAMANHO: %d | PARITY: %d", message->sequence, message_type_str(message->type), message->length, message->parity);
 }
 
-void prinfhexMessage(t_message *message) {
+void prinfhexMessage(message_t *message) {
     printf("> \n");
     for (int i = 0; i < MESSAGE_SIZE_BYTES; i++) {
         printf("%02X ", ((unsigned char *)message)[i]);
@@ -240,7 +251,7 @@ void prinfhexMessage(t_message *message) {
 void flush_recv_queue(int socket) {
     int save = errno;
     unsigned char *trash = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
-    t_message *messageR = init_message(trash);
+    message_t *messageR = init_message(trash);
 #ifdef DEBUG
     int old_state;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);

@@ -69,7 +69,7 @@ int identifica_comando(char *argv[], int argc) {
     switch (hash_function(argv[0])) {
         case BACKUP:
             if (argc == 2)
-                comando = C_BACKUP_1FILE;
+                comando = C_BACKUP_FILE;
             else if (argc > 2)
                 comando = C_BACKUP_GROUP;
             else
@@ -78,7 +78,7 @@ int identifica_comando(char *argv[], int argc) {
 
         case REC:
             if (argc == 2)
-                comando = C_RECOVER_1FILE;
+                comando = C_RECOVER_FILE;
             else if (argc > 2)
                 comando = C_RECOVER_GROUP;
             else
@@ -125,11 +125,11 @@ void libera_e_sai(int exitCode, void *freeHeap) {
 
 int interpreta_comando(int comando) {
     switch (comando) {
-        case C_BACKUP_1FILE:
+        case C_BACKUP_FILE:
         case C_BACKUP_GROUP:
             return EXECUTANDO_BACKUP;
 
-        case C_RECOVER_1FILE:
+        case C_RECOVER_FILE:
         case C_RECOVER_GROUP:
             return EXECUTANDO_REC;
 
@@ -176,7 +176,7 @@ int main(void) {
 
     void *packets_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
     empilhar(freeHeap, packets_buffer);
-    t_message *messageR = init_message(packets_buffer);  // Você recebe uma resposta. (Pacote recebido)
+    message_t *messageR = init_message(packets_buffer);  // Você recebe uma resposta. (Pacote recebido)
 
     int argc;
     char *argv[4096];
@@ -244,7 +244,7 @@ int main(void) {
                 }
                 char *filename = argv[arquivos_processados + 1];
                 if (open_file(&curr_file, filename) == 0)
-                    if (cm_send_message(socket, filename, strlen(filename) + sizeof((char)'\0'), C_BACKUP_1FILE, messageR) != -1)
+                    if (cm_send_message(socket, filename, strlen(filename) + sizeof((char)'\0'), C_BACKUP_FILE, messageR) != -1)
                         if (cm_receive_message(socket, &error, 1, &type) != -1)
                             if (type == C_OK)
                                 estado = ENVIANDO_BACKUP_FILE;
@@ -309,7 +309,7 @@ int main(void) {
                         strcat((char *)buffer, " ");
                         strcat((char *)buffer, argv[i]);
                     }
-                    if (cm_send_message(socket, buffer, strlen((char *)buffer) + sizeof((char)'\0'), C_RECOVER_1FILE, messageR) != -1)
+                    if (cm_send_message(socket, buffer, strlen((char *)buffer) + sizeof((char)'\0'), C_RECOVER_FILE, messageR) != -1)
                         if (cm_receive_message(socket, buffer, sizeof(int), &type) != -1) {
                             if (type == C_OK) {
                                 arquivos_processados = 0;
