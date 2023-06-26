@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <math.h>
+#include <openssl/md5.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>

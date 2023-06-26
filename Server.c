@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <libgen.h>
+#include <openssl/md5.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
