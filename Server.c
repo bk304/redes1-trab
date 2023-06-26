@@ -11,7 +11,7 @@
 
 #include "ConexaoRawSocket.h"
 #include "connectionManager.h"
-#include "gistfile1.h"
+#include "files.h"
 #include "message.h"
 #include "pilha.h"
 #include "tokenlizer.h"

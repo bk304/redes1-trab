@@ -44,7 +44,7 @@ gistfile1.o: gistfile1.c gistfile1.h
 connectionManager.o: connectionManager.c connectionManager.h message.h
 	gcc $(CFLAGS) -o connectionManager.o -c connectionManager.c $(WARNING)
 
-lo: CFLAGS += -DNETINTERFACE=\"lo\" -DLO
+lo: CFLAGS += -DNETINTERFACE=\"eth0\" -DLO
 lo: all
 
 clean:

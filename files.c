@@ -1,8 +1,4 @@
-/*
- * Copyright 2011 Matthew Brush <mbrush(at)codebrainz(dot)ca>
- * Feel free to use this code however you want to.
- */
-#include "gistfile1.h"
+#include "files.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -11,6 +7,10 @@
 #include <string.h>
 #include <sys/stat.h>
 
+/*
+ * Copyright 2011 Matthew Brush <mbrush(at)codebrainz(dot)ca>
+ * Feel free to use this code however you want to.
+ */
 int mkdir_p(const char* pathname,
             mode_t mode) {
     char* tok = NULL;

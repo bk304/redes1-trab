@@ -1,5 +1,5 @@
-#ifndef GISTFILE1_H
-#define GISTFILE1_H
+#ifndef FILES_H
+#define FILES_H
 
 #include <stdio.h>
 #include <sys/stat.h>
