@@ -26,6 +26,12 @@
 #define NETINTERFACE "ERROR"
 #endif
 
+typedef enum ResultType {
+    OK,
+    EXIT,
+    ERRO,
+} ResultType;
+
 enum comandos {
     BACKUP = 14,
     REC = 116,
@@ -46,6 +52,14 @@ enum estados {
     ERRO,
     EXIT
 };
+
+typedef struct Client {
+    int socket;
+    unsigned char *buffer;
+    FILE *curr_file;
+    char *argv;
+    int argc;
+} Client;
 
 unsigned long hash_function(char *str) {
     unsigned long hash_value = 0;
@@ -168,6 +182,206 @@ int le_comando(int *argc, char *argv[]) {
     return identifica_comando(argv, *argc);
 }
 
+int executando_backup(Client *client){
+    unsigned char type;
+    int bytesT, bytesR;
+    char error = 0;
+    int r = OK;
+    message_t messageR;
+    int arquivos_processados = 0;
+    int qnt_arquivos = client->argc - 1;
+    for (int i = 1; i < client->argc; i++) {
+        if (access(client->argv[i], R_OK) != 0) {
+            printf("  \"%s\" \033[1;31m(Arquivo inexistante ou sem permissão de leitura)\033[0m\n", argv[i]);
+            r = ERRO;
+        } else if (!is_regular_file(client->argv[i])) {
+            printf("  \"%s\" \033[1;31m(Arquivo não é um arquivo regular)\033[0m\n", argv[i]);
+            r = ERRO;
+        } else {
+            printf("  \"%s\"\n", client->argv[i]);
+        }
+    }
+    // No caso de um erro ter ocorrido:
+    if (r == ERRO) {
+        printf("\033[1;31mOperação abortada.\033[0m\n");
+        return OK;
+    }
+
+    while(arquivos_processados < qnt_arquivos){
+        char *filename = client->argv[arquivos_processados + 1];
+        r = ERRO;
+        if (open_file(&(client->curr_file), filename) == 0)
+            if (cm_send_message(client->socket, filename, strlen(filename) + sizeof((char)'\0'), C_BACKUP_FILE, &messageR) != -1)
+                if (cm_receive_message(client->socket, &error, 1, &type) != -1)
+                    if (type = C_OK)
+                        r = OK;
+
+        if(r != OK)
+            return r;
+
+        while(!feof(client->curr_file)){
+            int bytes = fread(client->buffer, 1, BUFFER_SIZE, client->curr_file);
+            int offset = 0;
+            int sent;
+            while(bytes != 0){
+                if ((sent = cm_send_message(client->socket, client->buffer + offset, bytes, C_DATA, &messageR)) == -1) {
+                    messageError *messageErr = (messageError *)&messageR;
+                    if (messageErr->type == C_ERROR && messageErr->errorCode == BUFFER_FULL) {
+                        offset += messageErr->extraInfo;
+                        sent -= messageErr->extraInfo;
+                    } else {
+                        exit(-1);
+                    }
+                }
+
+                bytes -= sent;
+            }
+        }
+
+        // Chegou no final do arquivo
+        arquivos_processados += 1;
+        r = ERRO;
+        if (cm_send_message(client->socket, client->buffer, 0, C_END_OF_FILE, &messageR) != -1)
+            if (cm_receive_message(socket, &error, 1, &type) != -1)
+                if (type == C_OK) {  // Enviou todo o arquivo.
+                    r = OK;
+                    fprintf(stdout, "\033[%dA\033[0K\r", qnt_arquivos - arquivos_processados + 1);
+                    fprintf(stdout, "  \"%s\" \033[0;32m(Enviado)", client->argv[arquivos_processados]);
+                    fprintf(stdout, "\033[%dB\033[0K\r\033[0m", qnt_arquivos - arquivos_processados + 1);
+                    fflush(stdout);
+                }
+
+        if (r == ERRO) {
+            fprintf(stdout, "\033[%dA\033[0K\r", qnt_arquivos - arquivos_processados + 1);
+            fprintf(stdout, "  \"%s\" \033[1;31m(ERRO)", client->argv[arquivos_processados]);
+            fprintf(stdout, "\033[%dB\033[0K\r\033[0m", qnt_arquivos - arquivos_processados + 1);
+            fflush(stdout);
+            return r;
+        }
+    } // while(arquivos_processados < qnt_arquivos)
+
+    return OK;
+}
+
+int executando_rec(Client *client){
+    int r = ERRO;
+    unsigned char type;
+    int bytes;
+    char error = 0;
+    message_t messageR;
+    int arquivos_processados = 0;
+    int qnt_arquivos;
+    // Verifica se os arquivos existem no servidor
+    // Ou se algum erro de leitura ocorre
+    client->buffer[0] = (unsigned char)'\0';
+    for (int i = 1; i < client->argc; i++) {
+        strcat((char *)client->buffer, " ");
+        strcat((char *)client->buffer, client->argv[i]);
+    }
+    if (cm_send_message(client->socket, client->buffer, strlen((char *)client->buffer) + sizeof((char)'\0'), C_RECOVER_FILE, &messageR) != -1)
+        if (cm_receive_message(client->socket, client->buffer, sizeof(int), &type) != -1) {
+            if (type == C_OK) {
+                qnt_arquivos = (int)(client->buffer[0]);
+                r = OK;
+            } else if (type == C_ERROR) {
+                if (((messageError *)client->buffer)->errorCode == NO_READ_PERMISSION)
+                    fprintf(stderr, "O servidor não tem permissão de leitura de um dos arquivos requesitados.\n");
+                else if (((messageError *)client->buffer)->errorCode == FILE_NOT_FOUND)
+                    fprintf(stderr, "Um ou mais dos arquivos requisitados não existem.\n");
+                else if (((messageError *)client->buffer)->errorCode == CHECK_ERRNO) {
+                    errno = ((messageError *)client->buffer)->errnoCode;
+                }
+
+                return OK;
+            }
+        }
+
+    while(arquivos_processados < qnt_arquivos){
+        // Cliente está pronto para receber um arquivo
+        if (cm_send_message(client->socket, client->buffer, 0, C_OK, &messageR) == -1)
+            exit(-1);
+
+        // Recebe o nome de um arquivo
+        if ((bytes = cm_receive_message(client->socket, client->buffer, BUFFER_SIZE, &type)) == -1)
+            exit(-1);
+        if (type != C_FILE_NAME) {
+            fprintf(stderr, "Cliente recebeu pacote do tipo errado. Esperado: C_FILE_NAME\n");
+            exit(-1);
+        }
+        char *filename = (char *)client->buffer;
+
+        // Abre esse arquivo
+        // e manda uma resposta confirmando
+        printf("Iniciando a recuperação do arquivo \"%s\".\n", filename);
+        client->curr_file = fopen(filename, "w+");
+        if (client->curr_file == NULL) {
+            printf("Falha ao abrir o arquivo. Recuperação abortada.\n");
+            r = ERRO;
+            type = C_ERROR;
+            bytes = 2;
+            ((messageError *)client->buffer)->errorCode = CHECK_ERRNO;
+            ((messageError *)client->buffer)->errnoCode = errno;
+        } else {
+            r = OK;
+            type = C_OK;
+            bytes = 0;
+        }
+        if (cm_send_message(client->socket, client->buffer, bytes, type, &messageR) == -1)
+            exit(-1);
+
+        if(r != OK)
+            return r;
+
+        for(;;){
+            if ((bytes = cm_receive_message(client->socket, client->buffer, BUFFER_SIZE, &type)) == -1)
+                exit(-1);
+
+            if(type == C_DATA){
+                fwrite(client->buffer, 1, bytes, client->curr_file);
+            } else if (type == C_END_OF_FILE){
+                fclose(client->curr_file);
+                if (cm_send_message(client->socket, client->buffer, 0, C_OK, &messageR) == -1)
+                    exit(-1);
+                printf("Recuperação Concluida.\n");
+                arquivos_processados += 1;
+                break;
+            } else{
+                return ERRO;
+            }
+        }
+    }
+
+    return OK;
+}
+
+int cd_server(Client *client);
+int verificar_md5(Client *client);
+int cd_client(Client *client);
+
+int command_handler(Client *client, int comando){
+    switch (comando) {
+        case C_BACKUP_FILE:
+        case C_BACKUP_GROUP:
+            return executando_backup(client);
+
+        case C_RECOVER_FILE:
+        case C_RECOVER_GROUP:
+            return EXECUTANDO_REC;
+
+        case C_CD_SERVER:
+            return CD_SERVER;
+
+        case C_VERIFY:
+            return ESPERANDO_MD5;
+
+        case CD_CLIENT:
+            return CD_CLIENT;
+
+        default:
+            return ERRO;
+    }  // switch (comando)
+}
+
 int main(void) {
     type_pilha *freeHeap = criar_pilha(sizeof(void *));
     on_exit(libera_e_sai, freeHeap);
@@ -177,7 +391,9 @@ int main(void) {
     //     exit(0);
     // }
 
-    int socket = ConexaoRawSocket(NETINTERFACE);
+    Client client;
+
+    client.socket = ConexaoRawSocket(NETINTERFACE);
 
     void *packets_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
     empilhar(freeHeap, packets_buffer);
@@ -185,9 +401,9 @@ int main(void) {
 
     int argc;
     char *argv[4096];
-    FILE *curr_file = NULL;
-    unsigned char *buffer = malloc(BUFFER_SIZE * sizeof(unsigned char));
-    empilhar(freeHeap, buffer);
+    client.curr_file = NULL;
+    client.buffer = malloc(BUFFER_SIZE * sizeof(unsigned char));
+    empilhar(freeHeap, client.buffer);
     if (buffer == NULL) {
         printf("Falha ao alocar buffer de arquivo.\n");
         exit(-1);
@@ -202,6 +418,32 @@ int main(void) {
     unsigned char type;
     int bytes;
 
+    // NEW
+    for(;;){
+        comando = le_comando(&argc, argv);
+        if (comando == -1) {
+            printModoDeUso();
+            break;
+        }
+
+        int r = command_handler(&client, comando);
+        switch(r){
+            case OK:
+                // Code
+                break;
+
+            case ERRO:
+                fprintf(stderr, "Ocorreu um erro.\n\t%s\n", strerror(errno));
+                break;
+
+            case EXIT:
+                exit(0);
+        }
+
+
+    }
+
+    // OLD
     for (;;) {
         switch (estado) {
             // ==

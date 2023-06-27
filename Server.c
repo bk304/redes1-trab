@@ -106,7 +106,6 @@ Result receber_backup_file(Server *server) {
             }
             break;
         } else {
-            printf("BROKEN LOGIC: %d\n", typeR);
             r.type = ERRO;
             return r;
         }
@@ -209,7 +208,6 @@ Result enviar_recover_file(Server *server) {
                 }
 
         if (r.type != OK) {
-            printf("Broken Logic 3: %d\n", typeR);
             return r;
         }
 
@@ -223,7 +221,7 @@ Result enviar_recover_file(Server *server) {
                     messageError *messageErr = (messageError *)&messageR;
                     if (messageErr->type == C_ERROR && messageErr->errorCode == BUFFER_FULL) {
                         offset += messageErr->extraInfo;
-                        bytesToSend -= messageErr->extraInfo;
+                        status -= messageErr->extraInfo;
                     } else {
                         exit(-1);
                     }
