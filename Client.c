@@ -95,7 +95,11 @@ int identifica_comando(char *argv[], int argc) {
             break;
 
         case VERIFICAR:
-            comando = C_VERIFY;
+            // Deve conter o comando e apenas um arquivo
+            if (argc == 2)
+                comando = C_VERIFY;
+            else
+                comando = -1;
             break;
 
         case CD:
@@ -138,7 +142,7 @@ int interpreta_comando(int comando) {
             return CD_SERVER;
 
         case C_VERIFY:
-            return ERRO;
+            return ESPERANDO_MD5;
 
         case CD_CLIENT:
             return CD_CLIENT;
@@ -395,6 +399,43 @@ int main(void) {
 
             // ==
             case ESPERANDO_MD5:
+                printf("Verificando o arquivo: %s\n", argv[argc - 1]);
+                MD5_CTX md5;
+                unsigned char hash_result_client[MD5_DIGEST_LENGTH];
+
+                // Calcula o md5 do lado do client
+                MD5_Init(&md5);
+                estado = ERRO;
+                if ((errno = open_file(&curr_file, argv[argc - 1])) != 0) {
+                    break;
+                }
+                while (!feof(curr_file)) {
+                    bytes = fread(buffer, 1, BUFFER_SIZE, curr_file);
+                    MD5_Update(&md5, buffer, bytes);
+                }
+                MD5_Final(hash_result_client, &md5);
+
+                // Envia para o servidor e espera o md5 do lado do servidor
+                if (cm_send_message(socket, argv[argc - 1], strlen(argv[argc - 1]) + sizeof((char)'\0'), C_VERIFY, messageR) != -1)
+                    if (cm_receive_message(socket, buffer, MD5_DIGEST_LENGTH, &type) != -1) {
+                        estado = PROMPT_DE_COMANDO;
+                        if (type == C_MD5) {
+                            if (memcmp(buffer, hash_result_client, MD5_DIGEST_LENGTH) == 0) {
+                                printf("Os arquivos são idênticos.\n");
+                            } else {
+                                printf("Esse arquivo está diferente do guardado no backup.\n");
+                            }
+                        } else if (type == C_ERROR) {
+                            if (((messageError *)buffer)->errorCode == FILE_NOT_FOUND) {
+                                printf("Arquivo não foi encontrado no servidor.\n");
+                            } else if (((messageError *)buffer)->errorCode == NO_READ_PERMISSION) {
+                                printf("O servidor não tem permissão de leitura sobre o arquivo.\n");
+                            } else if (((messageError *)buffer)->errorCode == CHECK_ERRNO) {
+                                printf("Ocorreu um erro no servidor: %s\n", strerror(((messageError *)buffer)->errnoCode));
+                            }
+                        }
+                    }
+
                 break;
 
             // ==

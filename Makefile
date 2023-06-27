@@ -4,7 +4,7 @@ all: client server
 
 WARNING = -Wall -Wextra -Wno-packed-bitfield-compat
 
-LFLAGS = -pthread -g
+LFLAGS = -pthread -lssl -lcrypto -g
 CFLAGS = -g
 
 # Alvo "debug"
@@ -21,10 +21,10 @@ RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS)) \
 	$(eval $(RUN_ARGS):;@:)
 
 client: Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o
-	gcc $(CFLAGS) $(LFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o $(WARNING)
+	gcc $(CFLAGS) -o client Client.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o $(WARNING) $(LFLAGS)
 
 server: Server.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o
-	gcc $(CFLAGS) $(LFLAGS) -o server Server.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o $(WARNING)
+	gcc $(CFLAGS) -o server Server.c ConexaoRawSocket.o message.o pilha.o tokenlizer.o connectionManager.o files.o $(WARNING) $(LFLAGS)
 
 ConexaoRawSocket.o: ConexaoRawSocket.c ConexaoRawSocket.h
 	gcc $(CFLAGS) -o ConexaoRawSocket.o -c ConexaoRawSocket.c $(WARNING)

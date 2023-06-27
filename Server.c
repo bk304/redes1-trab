@@ -294,6 +294,32 @@ Result cd_server(Server *server) {
 Result verifica_backup(Server *server) {
     Result r;
     r.type = ERRO;
+    FILE *file;
+    MD5_CTX md5;
+    message_t erro;
+    int bytes;
+    unsigned char hash_result_server[MD5_DIGEST_LENGTH];
+    printf("Verificando o arquivo: %s\n", getFileName(server->buffer));
+
+    if ((errno = open_file(&file, getFileName(server->buffer))) != 0) {
+        r.type = ERRO;
+        return r;
+    }
+
+    // Calcula o md5 do lado do server
+    MD5_Init(&md5);
+    while (!feof(file)) {
+        bytes = fread(server->buffer, 1, BUFFER_SIZE, file);
+        MD5_Update(&md5, server->buffer, bytes);
+    }
+    MD5_Final(hash_result_server, &md5);
+
+    if (cm_send_message(server->socket, hash_result_server, MD5_DIGEST_LENGTH, C_MD5, &erro) == -1) {
+        r.type = ERRO;
+    } else {
+        r.type = OK;
+    }
+
     return r;
 }
 
