@@ -72,12 +72,6 @@ void printModoDeUso(void) {
     printf("Modo de Uso:\n\t$ client [backup|rec|cdsv|verificar|cd] [arquivos]\n");
 }
 
-int is_regular_file(const char *path) {
-    struct stat path_stat;
-    stat(path, &path_stat);
-    return S_ISREG(path_stat.st_mode);
-}
-
 int identifica_comando(char *argv[], int argc) {
     int comando = -1;
 
@@ -309,8 +303,9 @@ int executando_rec(Client *client) {
             exit(-1);
 
         // Recebe o nome de um arquivo
-        if ((bytes = cm_receive_message(client->socket, client->buffer, BUFFER_SIZE, &type)) == -1)
+        if ((bytes = cm_receive_message(client->socket, client->buffer, BUFFER_SIZE, &type)) == -1) {
             exit(-1);
+        }
         if (type != C_FILE_NAME) {
             fprintf(stderr, "Cliente recebeu pacote do tipo errado. Esperado: C_FILE_NAME\n");
             exit(-1);
@@ -320,6 +315,9 @@ int executando_rec(Client *client) {
         // Abre esse arquivo
         // e manda uma resposta confirmando
         printf("Iniciando a recuperação do arquivo \"%s\".\n", filename);
+        if (client->curr_file != NULL) {
+            fclose(client->curr_file);
+        }
         client->curr_file = fopen(filename, "w+");
         if (client->curr_file == NULL) {
             printf("Falha ao abrir o arquivo. Recuperação abortada.\n");
@@ -357,6 +355,10 @@ int executando_rec(Client *client) {
                 return ERRO;
             }
         }
+    }
+
+    if (client->curr_file != NULL) {
+        fclose(client->curr_file);
     }
 
     return OK;

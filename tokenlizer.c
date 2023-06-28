@@ -65,7 +65,10 @@ int glob_arg(int *argc, char *argv[]) {
         if (hasStar(word)) {
             status = glob(word, 0, NULL, &result);
             if (status != 0) {
-                printf("ERRO NO glob: %d\n", status);
+                if (status == 3)
+                    printf("ERRO NO glob: No found matches.\n");
+                else
+                    printf("ERRO NO glob: %d\n", status);
                 return 0;
             }
 
