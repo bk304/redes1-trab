@@ -2,3 +2,12 @@
 *.o
 client
 server
+data/Avatar2.mkv
+serverFolder/*
+serverFolder/lib64/ld-linux-x86-64.so.2
+serverFolder/lib/x86_64-linux-gnu/libpthread.so.0
+serverFolder/lib/x86_64-linux-gnu/libm.so.6
+serverFolder/lib/x86_64-linux-gnu/libgcc_s.so.1
+serverFolder/lib/x86_64-linux-gnu/libc.so.6
+data/Avatar2.mkv
+teste/teste2.png

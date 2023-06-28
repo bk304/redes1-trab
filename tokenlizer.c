@@ -5,8 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ARG_MAX_SIZE 4096
-
 enum token_part { NONE,
                   IN_WORD,
                   IN_STRING };
@@ -95,6 +93,14 @@ int includeArg(char *word, int *argc, char *argv[]) {
 
 int tokenlize(char *str, int *argc, char *argv[]) {
     int state = NONE;
+
+    if (*argc > 0) {
+        for (int i = 0; i < *argc; i++)
+            free(argv[i]);
+
+        *argc = 0;
+    }
+
     char *word = newWord(ARG_MAX_SIZE);
     if (word == NULL) {
         free(word);
