@@ -94,11 +94,11 @@ int includeArg(char *word, int *argc, char *argv[]) {
 int tokenlize(char *str, int *argc, char *argv[]) {
     int state = NONE;
 
-    if(argc > 0){
-        for(int i=0; i<argc; i++)
-            free(argv[i])
+    if (*argc > 0) {
+        for (int i = 0; i < *argc; i++)
+            free(argv[i]);
 
-        argc = 0;
+        *argc = 0;
     }
 
     char *word = newWord(ARG_MAX_SIZE);

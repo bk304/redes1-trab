@@ -249,7 +249,8 @@ void *_senderAssistant(void *arg) {
         }
 
         if (messageR->type != C_ACK && messageR->type != C_NACK) {
-            memcpy(errorResponse, messageR, sizeof(message_t));
+            if (errorResponse != NULL)
+                memcpy(errorResponse, messageR, sizeof(message_t));
             pthread_exit(NULL);
         }
 
@@ -668,7 +669,8 @@ int cm_receive_message(int socketFD, void *buf, size_t len, unsigned char *retur
         bytesReceived = -1;
     }
 
-    *returnedType = messageType;
+    if (returnedType != NULL)
+        *returnedType = messageType;
 
     sw_free(window);
 

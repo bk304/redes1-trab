@@ -98,6 +98,7 @@ Result receber_backup_file(Server *server) {
             fwrite(server->buffer, 1, bytesR, server->curr_file);
         } else if (typeR == C_END_OF_FILE) {
             fclose(server->curr_file);
+            server->curr_file = NULL;
             if (cm_send_message(server->socket, server->buffer, 0, C_OK, &messageR) == -1)
                 exit(-1);
             if (messageR.type == C_ERROR) {
@@ -116,7 +117,7 @@ Result receber_backup_file(Server *server) {
     return r;
 }
 
-Result receber_backup_group(Server *server) {
+Result receber_backup_group(Server *server __attribute__((unused))) {
     Result r;
     r.type = ERRO;
     return r;
@@ -125,7 +126,7 @@ Result receber_backup_group(Server *server) {
 Result enviar_recover_file(Server *server) {
     Result r;
     unsigned char typeT, typeR;
-    int bytesT, bytesR;
+    int bytesT;
     message_t messageR;
     int argc;
     char *argv[4096];
@@ -244,6 +245,9 @@ Result enviar_recover_file(Server *server) {
                     fflush(stdout);
                 }
 
+        fclose(server->curr_file);
+        server->curr_file = NULL;
+
         if (r.type != OK) {
             fprintf(stdout, "\033[%dA\033[0K\r", qnt_arquivos - arquivos_processados + 1);
             fprintf(stdout, "  \"%s\" \033[1;31m(ERRO)", argv[arquivos_processados - 1]);
@@ -257,7 +261,7 @@ Result enviar_recover_file(Server *server) {
     return r;
 }
 
-Result enviar_recover_group(Server *server) {
+Result enviar_recover_group(Server *server __attribute__((unused))) {
     Result r;
     r.type = ERRO;
     return r;
@@ -265,8 +269,8 @@ Result enviar_recover_group(Server *server) {
 
 Result cd_server(Server *server) {
     Result r;
-    unsigned char typeT, typeR;
-    int bytesT, bytesR;
+    unsigned char typeT;
+    int bytesT;
     message_t messageR;
 
     printf("Trocando de diretório para: \"%s\".\n", server->buffer);
@@ -297,9 +301,8 @@ Result verifica_backup(Server *server) {
     message_t erro;
     int bytes;
     unsigned char hash_result_server[MD5_DIGEST_LENGTH];
-    printf("Verificando o arquivo: %s\n", getFileName(server->buffer));
-
-    if ((errno = open_file(&file, getFileName(server->buffer))) != 0) {
+    printf("Verificando o arquivo: %s\n", getFileName((char *)server->buffer));
+    if ((errno = open_file(&file, (char *)getFileName((char *)server->buffer))) != 0) {
         r.type = ERRO;
         return r;
     }
@@ -321,9 +324,8 @@ Result verifica_backup(Server *server) {
     return r;
 }
 
-Result request_handler(Server *server, int bytesReceived, unsigned int typeReceived) {
+Result request_handler(Server *server, unsigned int typeReceived) {
     Result r;
-    Result status;
 
     if (!(isCommandMessageType(typeReceived))) {
         r.type = ERRO;
@@ -366,6 +368,8 @@ Result request_handler(Server *server, int bytesReceived, unsigned int typeRecei
         default:
             exit(-1);
     }
+
+    return r;
 }
 
 void libera_e_sai(__attribute__((unused)) int exitCode, void *freeHeap) {
@@ -394,10 +398,6 @@ int main(void) {
     char *argStr = malloc(2 * ARG_MAX_SIZE * sizeof(char));
     empilhar(freeHeap, argStr);
 
-    void *packets_buffer = malloc(PACKET_SIZE_BYTES * sizeof(unsigned char));
-    empilhar(freeHeap, packets_buffer);
-    message_t *messageR = init_message(packets_buffer);  // Você recebe uma resposta. (Pacote recebido)
-
     Server server;
     server.socket = ConexaoRawSocket(NETINTERFACE);
     server.curr_file = NULL;
@@ -409,16 +409,8 @@ int main(void) {
     }
 
     Result r;
-    int arquivos_processados = 0;
-    int qnt_arquivos = 0;
-    int argc;
-    char *argv[4096];
-    int count = 0;
-
     unsigned char typeR;
-    unsigned char typeT;
     int bytesR;
-    int bytesT;
 
     printf("Lendo socket...\n");
 
@@ -427,7 +419,7 @@ int main(void) {
         if ((bytesR = cm_receive_message(server.socket, server.buffer, BUFFER_SIZE, &typeR)) == -1)
             exit(-1);
 
-        r = request_handler(&server, bytesR, typeR);
+        r = request_handler(&server, typeR);
         switch (r.type) {
             case OK:
                 /* code */

@@ -74,6 +74,10 @@ const char* getFileName(const char* path) {
 int open_file(FILE** curr_file, char* filename) {
     struct stat about_file;
 
+    if (*curr_file != NULL) {
+        fclose(*curr_file);
+    }
+
     *curr_file = fopen(filename, "r");
     if (*curr_file == NULL)
         return errno;
