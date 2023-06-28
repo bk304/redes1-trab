@@ -511,6 +511,7 @@ void *_receiverAssistant(void *arg) {
 
         if (messageR->type == C_NACK) {
             // Reenvia a ultima mensagem que não foi NACK
+            reenviaJanela(socketFD, window);
             if (send_message(socketFD, messageT) == -1) {
                 fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
                 exit(-1);
