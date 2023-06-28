@@ -7,5 +7,6 @@
 // Ele foi pensado para ser usado exclusivamente nesse projeto.
 // Então ele identifica characteres '*' e expande como se fosse no bash.
 int tokenlize(char *str, int *argc, char *argv[]);
+int glob_arg(int *argc, char *argv[]);
 
 #endif  // !__TOKENLIZER_H__

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Isso copia as libs necessarias para a pasta do server
+# Isso porque o server usa chroot
+
 # Diretório de destino para as bibliotecas
 LIBS_DIR="./serverFolder"
 

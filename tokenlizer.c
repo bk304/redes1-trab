@@ -54,37 +54,60 @@ char isSpace(unsigned char c) {
     return c == ' ';
 }
 
-int includeArg(char *word, int *argc, char *argv[]) {
-    char *newArgument;
-    glob_t result;
+int glob_arg(int *argc, char *argv[]) {
     int status;
+    glob_t result;
+    char *word;
+    char *newArgument;
 
-    if (!hasStar(word)) {
-        newArgument = strdup(word);
-        if (newArgument == NULL) {
-            free(word);
-            return 0;
-        }
-        argv[(*argc)++] = newArgument;
-    } else {
-        status = glob(word, 0, NULL, &result);
-        if (status != 0) {
-            free(word);
-            printf("ERRO NO glob: %d\n", status);
-            return 0;
-        }
-
-        for (size_t i = 0; i < result.gl_pathc; i++) {
-            newArgument = strdup(result.gl_pathv[i]);
-            if (newArgument == NULL) {
-                free(word);
+    for (int i = 0; i < *argc; i++) {
+        word = argv[i];
+        if (hasStar(word)) {
+            status = glob(word, 0, NULL, &result);
+            if (status != 0) {
+                if (status == 3)
+                    printf("ERRO NO glob: No found matches.\n");
+                else
+                    printf("ERRO NO glob: %d\n", status);
                 return 0;
             }
-            argv[(*argc)++] = newArgument;
-        }
 
-        globfree(&result);
+            if (result.gl_pathc == 0) {
+                return 1;
+            }
+
+            // primeira opção
+
+            newArgument = strdup(result.gl_pathv[0]);
+            if (newArgument == NULL)
+                return 0;
+            argv[i] = newArgument;
+
+            // outras opçoes
+
+            for (size_t j = 1; j < result.gl_pathc; j++) {
+                newArgument = strdup(result.gl_pathv[j]);
+                if (newArgument == NULL)
+                    return 0;
+                argv[(*argc)++] = newArgument;
+            }
+
+            globfree(&result);
+        }
     }
+
+    return 1;
+}
+
+int includeArg(char *word, int *argc, char *argv[]) {
+    char *newArgument;
+
+    newArgument = strdup(word);
+    if (newArgument == NULL) {
+        free(word);
+        return 0;
+    }
+    argv[(*argc)++] = newArgument;
 
     resetWord(word);
 

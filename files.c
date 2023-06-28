@@ -87,3 +87,9 @@ int open_file(FILE** curr_file, char* filename) {
 
     return 0;
 }
+
+int is_regular_file(const char* path) {
+    struct stat path_stat;
+    stat(path, &path_stat);
+    return S_ISREG(path_stat.st_mode);
+}

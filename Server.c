@@ -130,25 +130,38 @@ Result enviar_recover_file(Server *server) {
     message_t messageR;
     int argc;
     char *argv[4096];
+    char arg_valido[4096];
     int arquivos_processados = 0;
     int qnt_arquivos = 0;
     int bytesToSend;
     int offset = 0;
     int status;
 
-    // Separa nomes com asterisco (*) em todas as possibilidades
+    // Separa nomes
     if (tokenlize((char *)server->buffer, &argc, argv)) {
         exit(-1);
     }
 
+    // trata os asteriscos
+    if (!glob_arg(&argc, argv)) {
+        r.type = ERRO;
+        return r;
+    }
+
     // Verifica se todos os arquivos são acessiveis
     r.type = OK;
+
     for (int i = 0; i < argc; i++) {
         if (access(argv[i], R_OK) != 0) {
-            printf("  \"%s\" \033[1;31m(Arquivo inexistante ou sem permissão de leitura)\033[0m\n", argv[i]);
-            r.type = ERRO;
+            printf("  \"%s\" \033[1;31m(Arquivo inexistante ou sem permissão de leitura: Ignorado)\033[0m\n", argv[i]);
+            arg_valido[i] = 0;
+        } else if (!is_regular_file(argv[i])) {
+            printf("  \"%s\" \033[1;31m(Arquivo não é um arquivo regular: Ignorado)\033[0m\n", argv[i]);
+            arg_valido[i] = 0;
         } else {
             printf("  \"%s\"\n", argv[i]);
+            arg_valido[i] = 1;
+            qnt_arquivos += 1;
         }
     }
 
@@ -156,7 +169,6 @@ Result enviar_recover_file(Server *server) {
         // Se tudo foi OK:
         typeT = C_OK;
         bytesT = sizeof(int);
-        qnt_arquivos = argc;
         ((int *)server->buffer)[0] = qnt_arquivos;
     } else {
         // No caso de um erro ter ocorrido:
@@ -187,14 +199,17 @@ Result enviar_recover_file(Server *server) {
         return r;
     }
 
-    if (cm_receive_message(server->socket, server->buffer, BUFFER_SIZE, (unsigned char *)&typeR) == -1)
-        exit(-1);
-
     // Já que são acessiveis, agora começará a enviar eles
     while (arquivos_processados < qnt_arquivos) {
+        if (cm_receive_message(server->socket, server->buffer, BUFFER_SIZE, (unsigned char *)&typeR) == -1)
+            exit(-1);
         //
         // Abre um arquivo e envia o nome para o cliente.
         // Caso o cliente consiga criar um arquivo, continua.
+        if (arg_valido[arquivos_processados] == 0) {
+            arquivos_processados += 1;
+            continue;
+        }
         char *filename = argv[arquivos_processados];
         r.type = ERRO;
         if (open_file(&(server->curr_file), filename) == 0)
@@ -253,7 +268,6 @@ Result enviar_recover_file(Server *server) {
             fprintf(stdout, "  \"%s\" \033[1;31m(ERRO)", argv[arquivos_processados - 1]);
             fprintf(stdout, "\033[%dB\033[0K\r\033[0m", qnt_arquivos - arquivos_processados + 1);
             fflush(stdout);
-            return r;
         }
     }  // while (arquivos_processados < qnt_arquivos)
 
