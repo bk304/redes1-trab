@@ -413,8 +413,6 @@ int main(void) {
     int bytesR;
 
     printf("Lendo socket...\n");
-
-    // NEW
     for (;;) {
         if ((bytesR = cm_receive_message(server.socket, server.buffer, BUFFER_SIZE, &typeR)) == -1)
             exit(-1);

@@ -471,7 +471,7 @@ int main(void) {
         exit(-1);
     }
 
-    // NEW
+    printModoDeUso();
     for (;;) {
         int comando = le_comando(&(client.argc), client.argv);
         if (comando == -1) {
