@@ -576,7 +576,6 @@ void *_receiverAssistant(void *arg) {
             messageT->length = sizeof(char);
             messageT->data[0] = messageR->sequence;
             *messageType = (unsigned char)messageR->type;
-            currSeq = NEXT_SEQUENCE(currSeq);
             if (send_message(socketFD, messageT) == -1) {
                 fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
                 exit(-1);
