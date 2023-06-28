@@ -427,11 +427,13 @@ int main(void) {
                 // Envia mensagem pro client pedindo para reiniciar.
                 // E volta a ouvir por comandos
                 printf("Ocorreu um erro.\n\t%s\n", strerror(errno));
+                errno = 0;
                 break;
 
             case ERRO_NO_CLIENT_WARNING:
                 // Faz a mesma coisa que o ERRO normal, mas não vai enviar uma mensagem avisando o client.
                 printf("Ocorreu um erro.\n\t%s\n", strerror(errno));
+                errno = 0;
                 break;
         }
     }
