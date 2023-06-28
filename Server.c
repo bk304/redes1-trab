@@ -136,9 +136,15 @@ Result enviar_recover_file(Server *server) {
     int offset = 0;
     int status;
 
-    // Separa nomes com asterisco (*) em todas as possibilidades
+    // Separa nomes
     if (tokenlize((char *)server->buffer, &argc, argv)) {
         exit(-1);
+    }
+
+    // trata os asteriscos
+    if (!glob_arg(&argc, argv)) {
+        r.type = ERRO;
+        return r;
     }
 
     // Verifica se todos os arquivos são acessiveis

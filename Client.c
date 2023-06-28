@@ -187,6 +187,8 @@ int executando_backup(Client *client) {
     char error = 0;
     int r = OK;
     message_t messageR;
+    if (!glob_arg(&(client->argc), client->argv))
+        return ERRO;
     int arquivos_processados = 0;
     int qnt_arquivos = client->argc - 1;
     for (int i = 1; i < client->argc; i++) {
@@ -422,6 +424,8 @@ int verificar_md5(Client *client) {
     return r;
 }
 int cd_client(Client *client) {
+    if (!glob_arg(&(client->argc), client->argv))
+        return ERRO;
     printf("Mudando para o diretório: %s\n", client->argv[client->argc - 1]);
     if (chdir(client->argv[client->argc - 1]))
         return ERRO;
