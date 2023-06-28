@@ -511,7 +511,6 @@ void *_receiverAssistant(void *arg) {
 
         if (messageR->type == C_NACK) {
             // Reenvia a ultima mensagem que não foi NACK
-            reenviaJanela(socketFD, window);
             if (send_message(socketFD, messageT) == -1) {
                 fprintf(stderr, "ERRO NO SEND MESSAGE em _receiverAssistant\n");
                 exit(-1);
@@ -529,11 +528,12 @@ void *_receiverAssistant(void *arg) {
             // Ha não ser que seja o segundo caso, será o primeiro
             wrongSequence = 1;
 
-            int limit = PREV_MULT_SEQUENCE(messageR->sequence, window->capacity - 1);
-            for (int s = PREV_SEQUENCE(messageR->sequence); s != limit; s = PREV_SEQUENCE(s)) {
+            int limit = PREV_MULT_SEQUENCE(currSeq, window->capacity - 1);
+            for (int s = PREV_SEQUENCE(currSeq); s != limit; s = PREV_SEQUENCE(s)) {
                 if (messageR->sequence == s) {
                     // messageR->sequence é menor que currSeq
                     wrongSequence = 2;
+                    break;
                 }
             }
 
