@@ -21,7 +21,7 @@
 #define BUFFER_SIZE (64 * 1024 * 1024)
 
 #ifndef NETINTERFACE
-#error NETINTERFACE não está definido. Use "make [interface de rede]"
+#error NETINTERFACE não está definido. Use "make IF=<interface de rede>"
 //   definição do macro só pro editor de texto saber que é um macro
 #define NETINTERFACE "ERROR"
 #endif
@@ -279,23 +279,27 @@ int executando_rec(Client *client) {
         strcat((char *)client->buffer, " ");
         strcat((char *)client->buffer, client->argv[i]);
     }
-    if (cm_send_message(client->socket, client->buffer, strlen((char *)client->buffer) + sizeof((char)'\0'), C_RECOVER_FILE, &messageR) != -1)
+    if (cm_send_message(client->socket, client->buffer, strlen((char *)client->buffer) + sizeof((char)'\0'), C_RECOVER_FILE, &messageR) != -1) {
         if (cm_receive_message(client->socket, client->buffer, sizeof(int), &type) != -1) {
             if (type == C_OK) {
                 qnt_arquivos = (int)(client->buffer[0]);
                 r = OK;
-            } else if (type == C_ERROR) {
+            }
+        } else {
+            if (type == C_ERROR) {
                 if (((messageError *)client->buffer)->errorCode == NO_READ_PERMISSION)
                     fprintf(stderr, "O servidor não tem permissão de leitura de um dos arquivos requesitados.\n");
                 else if (((messageError *)client->buffer)->errorCode == FILE_NOT_FOUND)
                     fprintf(stderr, "Um ou mais dos arquivos requisitados não existem.\n");
                 else if (((messageError *)client->buffer)->errorCode == CHECK_ERRNO) {
                     errno = ((messageError *)client->buffer)->errnoCode;
+                    fprintf(stderr, "Erro no servidor: %s.\n", strerror(errno));
                 }
 
                 return OK;
             }
         }
+    }
 
     while (arquivos_processados < qnt_arquivos) {
         // Cliente está pronto para receber um arquivo

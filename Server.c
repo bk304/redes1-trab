@@ -18,7 +18,7 @@
 #include "tokenlizer.h"
 
 #ifndef NETINTERFACE
-#error "NETINTERFACE não está definido. Use 'make [interface de rede]"
+#error "NETINTERFACE não está definido. Use 'make IF=<interface de rede>"
 // define só para o editor de texto saber que é um macro.
 #define NETINTERFACE "lo"
 #endif

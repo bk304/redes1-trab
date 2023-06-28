@@ -1,11 +1,17 @@
 .PHONY: all debug lo clean purge
 
+ifeq ($(strip $(IF)),)
+    $(error A variável IF não está definida. Utilize: make IF=<interface de rede>)
+endif
+
+LFLAGS = -pthread -lssl -lcrypto -g
+CFLAGS = -g
+
+all: CFLAGS += -DNETINTERFACE=\"$(IF)\"
 all: client server
 
 WARNING = -Wall -Wextra -Wno-packed-bitfield-compat
 
-LFLAGS = -pthread -lssl -lcrypto -g
-CFLAGS = -g
 
 # Alvo "debug"
 ifeq ($(filter debug,$(MAKECMDGOALS)),debug)
@@ -44,8 +50,10 @@ files.o: files.c files.h
 connectionManager.o: connectionManager.c connectionManager.h message.h
 	gcc $(CFLAGS) -o connectionManager.o -c connectionManager.c $(WARNING)
 
-lo: CFLAGS += -DNETINTERFACE=\"eth0\" -DLO
+lo: CFLAGS += -DLO
 lo: all
+
+debug: all
 
 clean:
 	- rm -f *.o *~
