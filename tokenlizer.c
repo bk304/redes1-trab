@@ -88,17 +88,16 @@ int glob_arg(int *argc, char *argv[]) {
                     return 0;
                 argv[(*argc)++] = newArgument;
             }
+
+            globfree(&result);
         }
     }
 
-    globfree(&result);
     return 1;
 }
 
 int includeArg(char *word, int *argc, char *argv[]) {
     char *newArgument;
-    glob_t result;
-    int status;
 
     newArgument = strdup(word);
     if (newArgument == NULL) {
